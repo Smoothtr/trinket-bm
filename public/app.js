@@ -19,6 +19,7 @@ new MutationObserver(syncModalState).observe(modalHost, { childList: true });
 
 const state = {
   data: null,
+  session: null,
   view: "dashboard",
   search: "",
   period: "2026-05",
@@ -233,8 +234,9 @@ function canSeeCosts() {
 }
 
 async function api(path, options = {}) {
+  const authHeaders = await window.TrinketFirebase.authHeaders();
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    headers: { "Content-Type": "application/json", ...authHeaders, ...(options.headers || {}) },
     ...options,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
@@ -243,6 +245,78 @@ async function api(path, options = {}) {
     throw new Error(error.error || response.statusText);
   }
   return response.json();
+}
+
+async function authenticatedResource(path, { downloadName = "" } = {}) {
+  const authHeaders = await window.TrinketFirebase.authHeaders();
+  const response = await fetch(path, { headers: authHeaders });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error || response.statusText);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  if (downloadName) {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = downloadName;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return;
+  }
+  window.open(url, "_blank", "noopener");
+  window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+function showLogin(message = "") {
+  modalHost.innerHTML = `
+    <div class="modal-backdrop auth-backdrop">
+      <section class="modal modal-narrow auth-modal" role="dialog" aria-modal="true" aria-label="Đăng nhập Trinket" data-auth-lock="true">
+        <div class="modal-header">
+          <div><p class="eyebrow">Nội bộ Trinket</p><h2>Đăng nhập</h2><p class="muted small">Sử dụng tài khoản nhân viên đã được cấp quyền.</p></div>
+        </div>
+        <div class="modal-body">
+          <form id="authLoginForm" class="form-grid">
+            <div class="field full"><label>Email</label><input name="email" type="email" autocomplete="username" required placeholder="ten@trinket.vn"></div>
+            <div class="field full"><label>Mật khẩu</label><input name="password" type="password" autocomplete="current-password" required></div>
+            ${message ? `<div class="field full auth-message">${esc(message)}</div>` : ""}
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button class="button" type="button" data-action="reset-auth-password">Quên mật khẩu</button>
+          <button class="primary" type="submit" form="authLoginForm"><i data-lucide="log-in"></i><span>Đăng nhập</span></button>
+        </div>
+      </section>
+    </div>
+  `;
+  refreshIcons();
+}
+
+function roleDisplayName(role) {
+  return { admin: "Admin / Chủ", sale: "Sale", ops: "Vận hành / Kho", accounting: "Kế toán" }[role] || role;
+}
+
+async function enterAuthenticatedApp(session) {
+  state.session = session;
+  if (session.enabled && !["admin", "sale", "ops", "accounting"].includes(session.role)) {
+    await window.TrinketFirebase.signOut();
+    showLogin("Tài khoản chưa được cấp vai trò truy cập Trinket.");
+    return;
+  }
+  if (session.enabled) {
+    state.role = session.role;
+    const roleFilter = document.querySelector("#roleFilter");
+    roleFilter.value = session.role;
+    roleFilter.disabled = true;
+    roleFilter.title = `Vai trò đăng nhập: ${roleDisplayName(session.role)}`;
+    if (!document.querySelector("#logoutBtn")) {
+      roleFilter.insertAdjacentHTML("afterend", `<button class="ghost" id="logoutBtn" data-action="logout" title="Đăng xuất" aria-label="Đăng xuất"><i data-lucide="log-out"></i></button>`);
+    }
+  }
+  closeModal();
+  await loadData();
+  render();
+  refreshIcons();
 }
 
 async function loadData() {
@@ -855,7 +929,7 @@ function renderDashboard() {
         <div class="panel-header">
           <h2>Bảng đơn trên dashboard</h2>
           <div class="toolbar-right">
-            <a class="button" href="/api/export/orders.csv?role=${esc(state.role)}"><i data-lucide="download"></i><span>CSV</span></a>
+            <a class="button" href="#" data-action="export-orders"><i data-lucide="download"></i><span>CSV</span></a>
           </div>
         </div>
         <div class="table-wrap">${ordersTable(orders.slice(0, 8))}</div>
@@ -981,7 +1055,7 @@ function renderOrders() {
           ${searchSummary(orders.length, "deal")}
         </div>
         <div class="toolbar-right">
-          <a class="button" href="/api/export/orders.csv?role=${esc(state.role)}"><i data-lucide="download"></i><span>Export CSV</span></a>
+          <a class="button" href="#" data-action="export-orders"><i data-lucide="download"></i><span>Export CSV</span></a>
           <button class="primary" data-action="new-order"><i data-lucide="plus"></i><span>Tạo deal</span></button>
         </div>
       </section>
@@ -3311,6 +3385,10 @@ function bindShell() {
   });
 
   document.querySelector("#roleFilter").addEventListener("change", (event) => {
+    if (state.session?.enabled) {
+      event.target.value = state.role;
+      return;
+    }
     state.role = event.target.value;
     render();
   });
@@ -3340,6 +3418,7 @@ function bindShell() {
     const modal = modalHost.querySelector(".modal");
     if (!modal) return;
     if (event.key === "Escape") {
+      if (modal.dataset.authLock === "true") return;
       closeModal();
       return;
     }
@@ -3429,6 +3508,21 @@ function bindShell() {
   });
 
   modalHost.addEventListener("submit", async (event) => {
+    if (event.target.id === "authLoginForm") {
+      event.preventDefault();
+      const submitter = document.querySelector('[type="submit"][form="authLoginForm"]');
+      const data = new FormData(event.target);
+      if (submitter) submitter.disabled = true;
+      try {
+        const session = await window.TrinketFirebase.signIn(String(data.get("email") || "").trim(), String(data.get("password") || ""));
+        await enterAuthenticatedApp(session);
+      } catch (error) {
+        showLogin(error.message || "Đăng nhập không thành công.");
+      } finally {
+        if (submitter) submitter.disabled = false;
+      }
+      return;
+    }
     if (event.target.id === "paymentForm") {
       try {
         await submitPayment(event);
@@ -3446,6 +3540,19 @@ function bindShell() {
       if (action === "close-modal") {
         if (actionTarget.classList.contains("modal-backdrop") && event.target !== actionTarget) return;
         closeModal();
+      }
+      if (action === "logout") {
+        await window.TrinketFirebase.signOut();
+        state.data = null;
+        state.session = null;
+        document.querySelector("#logoutBtn")?.remove();
+        showLogin("Bạn đã đăng xuất.");
+      }
+      if (action === "reset-auth-password") {
+        const email = String(document.querySelector("#authLoginForm input[name='email']")?.value || "").trim();
+        if (!email) throw new Error("Nhập email trước khi yêu cầu đặt lại mật khẩu.");
+        await window.TrinketFirebase.resetPassword(email);
+        toast("Đã gửi email đặt lại mật khẩu nếu tài khoản tồn tại.");
       }
       if (action === "clear-search") {
         state.search = "";
@@ -3531,7 +3638,11 @@ function bindShell() {
       if (action === "delete-payment") await deletePayment(actionTarget.dataset.paymentId);
       if (action === "print-receipt") {
         toast("Đang mở trang in. Chọn Print để lưu PDF từ trình duyệt.");
-        window.open(`/api/receipts/${actionTarget.dataset.orderId}?lang=${actionTarget.dataset.lang}`, "_blank", "noopener");
+        await authenticatedResource(`/api/receipts/${actionTarget.dataset.orderId}?lang=${actionTarget.dataset.lang}`);
+      }
+      if (action === "export-orders") {
+        event.preventDefault();
+        await authenticatedResource("/api/export/orders.csv", { downloadName: "trinket-orders.csv" });
       }
       if (action === "edit-specs") openSpecsEditor(actionTarget.dataset.orderId);
       if (action === "save-specs") await saveSpecsFromForm();
@@ -3579,8 +3690,13 @@ function bindShell() {
 async function init() {
   bindShell();
   try {
-    await loadData();
-    render();
+    const session = await window.TrinketFirebase.initialize();
+    state.session = session;
+    if (session.enabled && !session.user) {
+      showLogin();
+      return;
+    }
+    await enterAuthenticatedApp(session);
   } catch (error) {
     app.innerHTML = `<div class="empty">Không tải được dữ liệu: ${esc(error.message)}</div>`;
   }

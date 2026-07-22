@@ -1,0 +1,28 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function roleIsAllowed() {
+      return request.auth.token.role in ['admin', 'sale', 'ops'];
+    }
+
+    function validProductImage() {
+      return request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+    }
+
+    match /deal-items/{orderId}/{itemId}/{fileName} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && roleIsAllowed() && validProductImage();
+      allow delete: if signedIn() && roleIsAllowed();
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

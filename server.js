@@ -3,6 +3,14 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const os = require("os");
+const {
+  assertOrderPatchAllowed,
+  authenticateRequest,
+  authorizeApiRequest,
+  firebaseConfigStatus,
+  isAuthRequired,
+} = require("./lib/auth");
+const { createStore } = require("./lib/store");
 
 const PORT = Number(process.env.PORT || 4173);
 const ROOT = __dirname;
@@ -11,6 +19,7 @@ const DATA_DIR = path.join(ROOT, "data");
 const IS_VERCEL = process.env.VERCEL === "1";
 const STORE_PATH = process.env.TRINKET_STORE_PATH || (IS_VERCEL ? path.join(os.tmpdir(), "trinket-store.json") : path.join(DATA_DIR, "store.json"));
 const SEED_PATH = path.join(DATA_DIR, "seed.json");
+const dataStore = createStore({ seedPath: SEED_PATH, storePath: STORE_PATH });
 
 const ORDER_STATUSES = [
   { id: "tu_van", label: "Mới / Tư vấn" },
@@ -64,30 +73,14 @@ const VTP_STATUS_MAP = {
 
 const TRACKING_FLOW = ["pending_pickup", "picked_up", "in_transit", "delivering", "delivered"];
 
-function ensureStore() {
-  fs.mkdirSync(path.dirname(STORE_PATH), { recursive: true });
-  if (!fs.existsSync(STORE_PATH)) {
-    fs.copyFileSync(SEED_PATH, STORE_PATH);
-    return;
-  }
-  try {
-    const current = JSON.parse(fs.readFileSync(STORE_PATH, "utf8"));
-    const seed = JSON.parse(fs.readFileSync(SEED_PATH, "utf8"));
-    if ((current.schema_version || 1) < (seed.schema_version || 1)) {
-      fs.copyFileSync(SEED_PATH, STORE_PATH);
-    }
-  } catch (error) {
-    fs.copyFileSync(SEED_PATH, STORE_PATH);
-  }
+async function readStore(actor = null) {
+  const data = normalizeData(await dataStore.read());
+  Object.defineProperty(data, "__actor", { value: actor, writable: true, configurable: true, enumerable: false });
+  return data;
 }
 
-function readStore() {
-  ensureStore();
-  return normalizeData(JSON.parse(fs.readFileSync(STORE_PATH, "utf8")));
-}
-
-function writeStore(data) {
-  fs.writeFileSync(STORE_PATH, `${JSON.stringify(data, null, 2)}\n`);
+async function writeStore(data, actor = null) {
+  return dataStore.write(data, actor);
 }
 
 function json(res, status, payload) {
@@ -710,13 +703,16 @@ function makeOrderCode(data) {
   return `TRK-${year}-${String(orderSequence(data)).padStart(4, "0")}`;
 }
 
-function audit(data, action, entity, entityId, changes, user = "system") {
+function audit(data, action, entity, entityId, changes, user = null) {
+  const actor = user || data.__actor;
   data.audit_logs.unshift({
     id: id("log"),
     action,
     entity,
     entity_id: entityId,
-    user,
+    user: actor?.email || actor?.name || actor || "system",
+    user_uid: actor?.uid || "",
+    user_role: actor?.role || "",
     changes,
     created_at: new Date().toISOString(),
   });
@@ -1045,12 +1041,17 @@ function renderReceipt(order, lang) {
 }
 
 async function routeApi(req, res, pathname, searchParams) {
-  const data = readStore();
+  const data = await readStore(req.user);
 
   if (req.method === "GET" && pathname === "/api/bootstrap") {
     const marketPrices = await getMarketPrices(data);
-    if (marketPrices.changed) writeStore(data);
+    if (marketPrices.changed) await writeStore(data, req.user);
     json(res, 200, { ...decoratedData(data), market_prices: marketPrices.payload });
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/api/admin/export") {
+    json(res, 200, data);
     return;
   }
 
@@ -1062,14 +1063,14 @@ async function routeApi(req, res, pathname, searchParams) {
         sources: marketPrices.payload.sourceLabel,
         errors: marketPrices.payload.errors || [],
       });
-      writeStore(data);
+      await writeStore(data, req.user);
     }
     json(res, 200, marketPrices.payload);
     return;
   }
 
   if (req.method === "GET" && pathname === "/api/export/orders.csv") {
-    const body = getOrderCsv(data, searchParams.get("role") || "admin");
+    const body = getOrderCsv(data, req.user.role);
     res.writeHead(200, {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": 'attachment; filename="trinket-orders.csv"',
@@ -1133,7 +1134,7 @@ async function routeApi(req, res, pathname, searchParams) {
       );
     }
     audit(data, "update", "settings", "business", { before, after: data.settings });
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 200, data.settings);
     return;
   }
@@ -1144,7 +1145,7 @@ async function routeApi(req, res, pathname, searchParams) {
     const material = normalizeMaterial({ ...body, id: id("mat") }, data.settings.material_catalog.length);
     data.settings.material_catalog.push(material);
     audit(data, "create", "material", material.id, material);
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 201, material);
     return;
   }
@@ -1164,7 +1165,7 @@ async function routeApi(req, res, pathname, searchParams) {
       });
     });
     audit(data, "update", "material", material.id, { before, after: material });
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 200, material);
     return;
   }
@@ -1186,7 +1187,7 @@ async function routeApi(req, res, pathname, searchParams) {
       });
     });
     audit(data, "delete", "material", removed.id, { material: removed, detachedItems });
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 200, { ok: true, detachedItems });
     return;
   }
@@ -1230,7 +1231,7 @@ async function routeApi(req, res, pathname, searchParams) {
       });
     }
     audit(data, "create", "product", product.id, product);
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 201, decorateProduct(product, data));
     return;
   }
@@ -1255,7 +1256,7 @@ async function routeApi(req, res, pathname, searchParams) {
     if (Object.prototype.hasOwnProperty.call(body, "track_inventory")) product.track_inventory = Boolean(body.track_inventory);
     if (Object.prototype.hasOwnProperty.call(body, "low_stock_threshold")) product.low_stock_threshold = Math.max(0, Number(body.low_stock_threshold || 0));
     audit(data, "update", "product", product.id, { before, after: product });
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 200, decorateProduct(product, data));
     return;
   }
@@ -1269,14 +1270,14 @@ async function routeApi(req, res, pathname, searchParams) {
       const before = { ...product };
       product.status = "inactive";
       audit(data, "archive", "product", product.id, { before, after: product });
-      writeStore(data);
+      await writeStore(data, req.user);
       json(res, 200, { ok: true, archived: true });
       return;
     }
     const [removed] = data.products.splice(index, 1);
     data.inventory_movements = (data.inventory_movements || []).filter((movement) => movement.product_id !== removed.id);
     audit(data, "delete", "product", removed.id, { product: removed });
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 200, { ok: true, archived: false });
     return;
   }
@@ -1305,7 +1306,7 @@ async function routeApi(req, res, pathname, searchParams) {
     };
     data.inventory_movements.unshift(movement);
     audit(data, "adjust", "inventory", product.id, movement);
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 201, { movement, product: decorateProduct(product, data) });
     return;
   }
@@ -1327,7 +1328,7 @@ async function routeApi(req, res, pathname, searchParams) {
     };
     data.customers.push(customer);
     audit(data, "create", "customer", customer.id, customer);
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 201, decorateCustomer(customer, data));
     return;
   }
@@ -1342,7 +1343,7 @@ async function routeApi(req, res, pathname, searchParams) {
       if (Object.prototype.hasOwnProperty.call(body, field)) customer[field] = body[field] || "";
     });
     audit(data, "update", "customer", customer.id, { before, after: customer });
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 200, decorateCustomer(customer, data));
     return;
   }
@@ -1354,7 +1355,7 @@ async function routeApi(req, res, pathname, searchParams) {
     const removedOrders = data.orders.filter((order) => order.customer_id === removed.id).map((order) => order.id);
     removedOrders.forEach((orderId) => removeOrderCascade(data, orderId));
     audit(data, "delete", "customer", removed.id, { customer: removed, removedOrders });
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 200, { ok: true, removedOrders });
     return;
   }
@@ -1372,7 +1373,7 @@ async function routeApi(req, res, pathname, searchParams) {
     };
     data.vendors.push(vendor);
     audit(data, "create", "vendor", vendor.id, vendor);
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 201, vendor);
     return;
   }
@@ -1387,7 +1388,7 @@ async function routeApi(req, res, pathname, searchParams) {
       if (Object.prototype.hasOwnProperty.call(body, field)) vendor[field] = body[field] || "";
     });
     audit(data, "update", "vendor", vendor.id, { before, after: vendor });
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 200, vendor);
     return;
   }
@@ -1404,7 +1405,7 @@ async function routeApi(req, res, pathname, searchParams) {
       }
     });
     audit(data, "delete", "vendor", removed.id, { vendor: removed, detachedLines });
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 200, { ok: true, detachedLines });
     return;
   }
@@ -1421,7 +1422,7 @@ async function routeApi(req, res, pathname, searchParams) {
     };
     data.expenses.push(expense);
     audit(data, "create", "expense", expense.id, expense);
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 201, expense);
     return;
   }
@@ -1437,7 +1438,7 @@ async function routeApi(req, res, pathname, searchParams) {
     });
     if (Object.prototype.hasOwnProperty.call(body, "amount")) expense.amount = money(body.amount);
     audit(data, "update", "expense", expense.id, { before, after: expense });
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 200, expense);
     return;
   }
@@ -1447,7 +1448,7 @@ async function routeApi(req, res, pathname, searchParams) {
     if (index === -1) return json(res, 404, { error: "Expense not found" });
     const [removed] = data.expenses.splice(index, 1);
     audit(data, "delete", "expense", removed.id, removed);
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 200, { ok: true });
     return;
   }
@@ -1467,7 +1468,7 @@ async function routeApi(req, res, pathname, searchParams) {
     data.payments.push(payment);
     syncOrderPaymentStatus(order, data);
     audit(data, "create", "payment", payment.id, payment);
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 201, payment);
     return;
   }
@@ -1485,7 +1486,7 @@ async function routeApi(req, res, pathname, searchParams) {
     const order = findById(data.orders, payment.order_id);
     syncOrderPaymentStatus(order, data);
     audit(data, "update", "payment", payment.id, { before, after: payment });
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 200, payment);
     return;
   }
@@ -1497,7 +1498,7 @@ async function routeApi(req, res, pathname, searchParams) {
     const order = findById(data.orders, removed.order_id);
     syncOrderPaymentStatus(order, data);
     audit(data, "delete", "payment", removed.id, removed);
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 200, { ok: true });
     return;
   }
@@ -1599,7 +1600,7 @@ async function routeApi(req, res, pathname, searchParams) {
         });
       });
     audit(data, "create", "order", order.id, order);
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 201, decorateOrder(order, data));
     return;
   }
@@ -1607,6 +1608,7 @@ async function routeApi(req, res, pathname, searchParams) {
   const orderMatch = pathname.match(/^\/api\/orders\/([^/]+)$/);
   if (orderMatch && req.method === "PATCH") {
     const body = await readBody(req);
+    assertOrderPatchAllowed(req.user, body);
     const order = findById(data.orders, orderMatch[1]);
     if (!order) return json(res, 404, { error: "Order not found" });
     if (body.customer_id && !findById(data.customers, body.customer_id)) return json(res, 400, { error: "Customer not found" });
@@ -1684,7 +1686,7 @@ async function routeApi(req, res, pathname, searchParams) {
       sourcing_before: sourceLinesBefore,
       sourcing_after: data.order_sourcing_lines.filter((line) => line.order_id === order.id),
     });
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 200, decorateOrder(order, data));
     return;
   }
@@ -1693,7 +1695,7 @@ async function routeApi(req, res, pathname, searchParams) {
     const removed = removeOrderCascade(data, orderMatch[1]);
     if (!removed) return json(res, 404, { error: "Order not found" });
     audit(data, "delete", "order", removed.id, removed);
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 200, { ok: true });
     return;
   }
@@ -1734,7 +1736,7 @@ async function routeApi(req, res, pathname, searchParams) {
     order.shipping_cost = quote.fee;
     order.updated_at = new Date().toISOString();
     audit(data, "create", "shipment", shipment.id, shipment);
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 201, shipment);
     return;
   }
@@ -1764,7 +1766,7 @@ async function routeApi(req, res, pathname, searchParams) {
       }
     }
     audit(data, "update", "shipment", shipment.id, { before, after: shipment });
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 200, shipment);
     return;
   }
@@ -1780,7 +1782,7 @@ async function routeApi(req, res, pathname, searchParams) {
       order.updated_at = new Date().toISOString();
     }
     audit(data, "delete", "shipment", removed.id, removed);
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 200, { ok: true });
     return;
   }
@@ -1804,12 +1806,22 @@ async function routeApi(req, res, pathname, searchParams) {
       order.updated_at = new Date().toISOString();
     }
     audit(data, "sync", "shipment", shipment.id, { status: nextStatus });
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 200, shipment);
     return;
   }
 
   if (req.method === "POST" && pathname === "/api/viettelpost/webhook") {
+    const webhookSecret = process.env.VTP_WEBHOOK_SECRET || "";
+    const providedSecret = String(req.headers["x-webhook-secret"] || "");
+    if (IS_VERCEL && !webhookSecret) return json(res, 503, { error: "VTP_WEBHOOK_SECRET chưa được cấu hình" });
+    if (webhookSecret) {
+      const expected = Buffer.from(webhookSecret);
+      const actual = Buffer.from(providedSecret);
+      if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
+        return json(res, 401, { error: "Webhook secret không hợp lệ" });
+      }
+    }
     const body = await readBody(req);
     const shipment = data.shipments.find((item) => item.tracking_code === body.tracking_code);
     if (!shipment) return json(res, 404, { error: "Shipment not found" });
@@ -1820,7 +1832,7 @@ async function routeApi(req, res, pathname, searchParams) {
     const order = findById(data.orders, shipment.order_id);
     if (order) order.status = mapped.orderStatus;
     audit(data, "webhook", "shipment", shipment.id, body);
-    writeStore(data);
+    await writeStore(data, req.user);
     json(res, 200, { ok: true });
     return;
   }
@@ -1832,22 +1844,46 @@ async function handleRequest(req, res) {
   try {
     const { pathname, searchParams } = parsePath(req.url);
     if (pathname.startsWith("/api/")) {
+      if (req.method === "GET" && pathname === "/api/firebase-config") {
+        const status = firebaseConfigStatus();
+        if (status.enabled && status.missing.length) {
+          json(res, 503, { enabled: true, error: "Firebase chưa được cấu hình đầy đủ: " + status.missing.join(", ") });
+          return;
+        }
+        json(res, 200, { enabled: status.enabled, config: status.enabled ? status.config : null });
+        return;
+      }
+      if (req.method === "GET" && pathname === "/api/health") {
+        json(res, 200, { ok: true, auth: isAuthRequired() ? "firebase" : "local", data: dataStore.backend });
+        return;
+      }
+      if (req.method === "POST" && pathname === "/api/viettelpost/webhook") {
+        req.user = { uid: "viettelpost-webhook", email: "", name: "Viettel Post", role: "system" };
+      } else {
+        req.user = await authenticateRequest(req);
+        authorizeApiRequest(req, pathname);
+      }
+      if (req.method === "GET" && pathname === "/api/me") {
+        json(res, 200, req.user);
+        return;
+      }
       await routeApi(req, res, pathname, searchParams);
       return;
     }
     serveStatic(req, res, pathname);
   } catch (error) {
-    console.error(error);
-    json(res, 500, { error: error.message || "Internal server error" });
+    const statusCode = Number(error.statusCode || 500);
+    if (statusCode >= 500) console.error(error);
+    json(res, statusCode, { error: error.message || "Internal server error" });
   }
 }
 
 if (require.main === module) {
   const server = http.createServer(handleRequest);
   server.listen(PORT, () => {
-    ensureStore();
-    console.log(`Trinket Business Manager running at http://localhost:${PORT}`);
+    console.log(`Trinket Business Manager running at http://localhost:${PORT} (${dataStore.backend})`);
   });
 }
 
 module.exports = handleRequest;
+module.exports.normalizeData = normalizeData;

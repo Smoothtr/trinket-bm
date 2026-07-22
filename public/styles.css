@@ -1608,6 +1608,23 @@ tbody tr:hover .row-actions,
   width: min(620px, 100%);
 }
 
+.auth-backdrop {
+  background: rgba(36, 33, 29, 0.58);
+}
+
+.auth-modal {
+  width: min(460px, 100%);
+}
+
+.auth-message {
+  padding: 10px 12px;
+  border: 1px solid #efc7ce;
+  border-radius: 6px;
+  background: #fff2f4;
+  color: var(--red);
+  font-size: 13px;
+}
+
 .modal-header,
 .modal-footer {
   padding: 16px 18px;

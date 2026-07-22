@@ -12,3 +12,7 @@ Trinket_BM_UX_UI_Guideline.docx
 Trinket_BM_Plan_Vong3.docx
 
 .vercel
+.env
+.env.*
+!.env.example
+firebase-debug.log
