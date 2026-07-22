@@ -7,9 +7,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "check": "node --check server.js && node --check lib/auth.js && node --check lib/firebase-admin.js && node --check lib/store.js && node --check public/app.js && node --check public/firebase-client.js && node --check scripts/migrate-json-to-firestore.js && node --check scripts/create-firebase-user.js",
+    "check": "node --check server.js && node --check lib/auth.js && node --check lib/firebase-admin.js && node --check lib/store.js && node --check public/app.js && node --check public/firebase-client.js && node --check public/money.js && node --check scripts/migrate-json-to-firestore.js && node --check scripts/create-firebase-user.js",
     "test": "npm run test:unit && npm run test:smoke",
-    "test:unit": "node --test tests/auth-policy.unit.test.js",
+    "test:unit": "node --test tests/*.unit.test.js",
     "test:smoke": "playwright test tests/smoke.spec.js --reporter=line",
     "firebase:migrate": "node scripts/migrate-json-to-firestore.js",
     "firebase:create-user": "node scripts/create-firebase-user.js",

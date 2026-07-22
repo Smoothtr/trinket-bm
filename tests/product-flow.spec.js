@@ -15,6 +15,29 @@ test("ready-made and custom deal flows preserve cost snapshots and inventory", a
     const customerId = bootstrap.customers[0]?.id;
     expect(customerId).toBeTruthy();
 
+    const invalidImageResponse = await call("/api/orders", {
+      method: "POST",
+      data: {
+        id: `ord_bad_${suffix}`,
+        customer_id: customerId,
+        items: [{
+          id: `itm_bad_${suffix}`,
+          product_mode: "custom",
+          product_name: "Invalid image path",
+          quantity: 1,
+          unit_price: 100000,
+          unit_cost: 50000,
+          image: {
+            storage_path: "deal-items/wrong/order/image.png",
+            original_name: "image.png",
+            content_type: "image/png",
+            size: 1024,
+          },
+        }],
+      },
+    });
+    expect(invalidImageResponse.status()).toBe(400);
+
     const productResponse = await call("/api/products", {
       method: "POST",
       data: {
@@ -91,22 +114,32 @@ test("ready-made and custom deal flows preserve cost snapshots and inventory", a
     const customOrderResponse = await call("/api/orders", {
       method: "POST",
       data: {
+        id: `ord_${suffix}`,
         customer_id: customerId,
         status: "tu_van",
         date_order: "2026-07-17",
         due_date: "2026-08-07",
-        price: 980000,
+        price: 3718000,
+        shipping_cost: 100000,
+        pricing: { profit_rate: 30, tax_rate: 10 },
         items: [{
+          id: `itm_${suffix}`,
           product_id: "",
           product_mode: "custom",
           product_type: "Bracelet",
           product_name: "Playwright custom product",
-          quantity: 1,
-          unit_price: 980000,
-          unit_cost: 0,
+          quantity: 2,
+          unit_price: 1859000,
+          unit_cost: 1000000,
+          image: {
+            storage_path: `deal-items/ord_${suffix}/itm_${suffix}/cover.webp`,
+            original_name: "cover.webp",
+            content_type: "image/webp",
+            size: 2048,
+          },
           specs: { material: "Bạc 925", stone: "Zircon", weight: "" },
         }],
-        sourcing_lines: [{ material: "Bạc 925 và gia công", cost: 320000 }],
+        sourcing_lines: [{ material: "Bạc 925 và gia công", cost: 500000 }],
       },
     });
     expect(customOrderResponse.status()).toBe(201);
@@ -114,8 +147,28 @@ test("ready-made and custom deal flows preserve cost snapshots and inventory", a
     orderIds.push(customOrder.id);
     expect(customOrder.items[0].product_mode).toBe("custom");
     expect(customOrder.items[0].product_id).toBe("");
-    expect(customOrder.item_cost).toBe(0);
-    expect(customOrder.source_cost).toBe(320000);
+    expect(customOrder.item_cost).toBe(2000000);
+    expect(customOrder.source_cost).toBe(500000);
+    expect(customOrder.total_cost).toBe(2600000);
+    expect(customOrder.pricing.profit_amount).toBe(780000);
+    expect(customOrder.pricing.tax_amount).toBe(338000);
+    expect(customOrder.pricing.suggested_price).toBe(3718000);
+    expect(customOrder.items[0].image.storage_path).toBe(`deal-items/ord_${suffix}/itm_${suffix}/cover.webp`);
+
+    const updatedCustomResponse = await call(`/api/orders/${customOrder.id}`, {
+      method: "PATCH",
+      data: {
+        items: [{
+          ...customOrder.items[0],
+          unit_cost: 1100000,
+          image: null,
+        }],
+      },
+    });
+    expect(updatedCustomResponse.ok()).toBeTruthy();
+    const updatedCustom = await updatedCustomResponse.json();
+    expect(updatedCustom.item_cost).toBe(2200000);
+    expect(updatedCustom.items[0].image).toBeNull();
 
     current = await (await call("/api/bootstrap")).json();
     currentProduct = current.products.find((item) => item.id === productId);

@@ -53,20 +53,37 @@ test("core screens, recommendation fixes, and modals render without client error
   await expect(page.getByText("Tính giá kim loại")).toHaveCount(0);
   await expect(page.locator('[data-pricing-output="item_cost"]')).toBeVisible();
   await page.locator('.product-item-row [data-action="set-product-mode"][data-mode="custom"]').click();
-  await expect(page.locator('.product-item-row .custom-only')).toBeVisible();
+  await expect(page.locator('.product-item-row .custom-only').first()).toBeVisible();
   await expect(page.locator('.product-item-row .catalog-only')).toBeHidden();
+  await expect(page.locator('.product-item-row [data-field="unit_cost"]')).toBeVisible();
+  await expect(page.locator('.product-item-row [data-field="product_image_file"]')).toHaveAttribute("accept", "image/jpeg,image/png,image/webp");
+  await page.locator('.product-item-row [data-field="product_image_file"]').setInputFiles({
+    name: "custom-ring.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZVZsAAAAASUVORK5CYII=", "base64"),
+  });
+  await expect(page.locator('.product-item-row .product-image-preview img')).toHaveAttribute("src", /^blob:/);
+  await page.locator('.product-item-row [data-action="remove-order-image"]').click();
+  await expect(page.locator('.product-item-row [data-action="remove-order-image"]')).toBeHidden();
+  await page.locator('.product-item-row [data-field="unit_cost"]').fill("1000000");
+  await page.locator('.product-item-row [data-field="quantity"]').fill("2");
+  await expect(page.locator('.product-item-row [data-field="unit_cost"]')).toHaveValue("1.000.000");
+  await expect(page.locator('.product-item-row [data-item-cost-output]')).toContainText("2.000.000");
   await expect(page.getByText("Engine báo giá")).toBeVisible();
   await expect(page.getByText("Bảo hành")).toHaveCount(0);
   await page.locator("[data-action='add-order-item']").click();
   await expect(page.locator(".product-item-row")).toHaveCount(2);
   await page.locator(".product-item-row").last().locator("[data-action='remove-order-item']").click();
   await expect(page.locator(".product-item-row")).toHaveCount(1);
-  await page.locator(".source-line-row [data-field='cost']").first().fill("1000000");
+  await page.locator(".source-line-row [data-field='cost']").first().fill("500000");
+  await expect(page.locator(".source-line-row [data-field='cost']").first()).toHaveValue("500.000");
+  await page.locator("input[name='shipping_cost']").fill("100000");
   await page.locator("input[name='profit_rate']").fill("30");
   await page.locator("input[name='tax_rate']").fill("10");
-  await expect(page.locator("[data-pricing-output='suggested_price']")).toContainText("1.430.000");
+  await expect(page.locator("[data-pricing-output='item_cost']")).toContainText("2.000.000");
+  await expect(page.locator("[data-pricing-output='suggested_price']")).toContainText("3.718.000");
   await page.locator("[data-action='apply-suggested-price']").click();
-  await expect(page.locator("input[name='price']")).toHaveValue("1430000");
+  await expect(page.locator("input[name='price']")).toHaveValue("3.718.000");
   await page.locator("[aria-label='Đóng']").click();
 
   await page.locator(".nav-item[data-view='products']").click();
@@ -138,4 +155,17 @@ test("core screens, recommendation fixes, and modals render without client error
   await expect(page.locator("[data-action='delete-expense']").first()).toBeVisible();
 
   expect(errors).toEqual([]);
+});
+
+test("custom product editor remains usable on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(process.env.BASE_URL || "http://localhost:4173", { waitUntil: "networkidle" });
+  await page.locator("#newOrderBtn").click();
+  await page.locator('[data-action="set-product-mode"][data-mode="custom"]').click();
+  await expect(page.locator('[data-field="unit_cost"]')).toBeVisible();
+  await expect(page.locator('[data-action="choose-order-image"]')).toBeVisible();
+  await page.locator('[data-field="unit_cost"]').fill("25000000");
+  await expect(page.locator('[data-field="unit_cost"]')).toHaveValue("25.000.000");
+  const overflows = await page.locator(".product-item-row").evaluate((row) => row.scrollWidth > row.clientWidth + 1);
+  expect(overflows).toBeFalsy();
 });

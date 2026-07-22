@@ -4,6 +4,12 @@ const toastHost = document.querySelector("#toastHost");
 const viewTitle = document.querySelector("#viewTitle");
 
 function closeModal() {
+  const orderForm = modalHost.querySelector(".order-editor-form");
+  if (orderForm?.dataset.uploading === "true") {
+    toast("Đang tải ảnh lên, vui lòng chờ hoàn tất");
+    return;
+  }
+  cleanupOrderImagePreviews(orderForm);
   modalHost.innerHTML = "";
 }
 
@@ -132,6 +138,46 @@ function esc(value) {
 
 function fmtMoney(value) {
   return moneyFormatter.format(Number(value || 0)).replace(/^-/, "−");
+}
+
+const ORDER_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const MAX_ORDER_IMAGE_SIZE = 5 * 1024 * 1024;
+
+function createClientId(prefix) {
+  const token = globalThis.crypto?.randomUUID
+    ? globalThis.crypto.randomUUID().replace(/-/g, "")
+    : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+  return `${prefix}_${token}`;
+}
+
+function moneyInputValue(value) {
+  return esc(window.TrinketMoney.formatMoneyInput(value));
+}
+
+function readMoneyField(input, fallback = 0) {
+  return window.TrinketMoney.readMoneyInput(input, fallback);
+}
+
+function setMoneyField(input, value) {
+  window.TrinketMoney.setMoneyInputValue(input, value);
+}
+
+function parseItemImage(value) {
+  if (!value) return null;
+  if (typeof value === "object") return value.storage_path ? value : null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed?.storage_path ? parsed : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function imageSizeLabel(size) {
+  const bytes = Number(size || 0);
+  if (!bytes) return "";
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toLocaleString("vi-VN", { maximumFractionDigits: 1 })} MB`;
+  return `${Math.ceil(bytes / 1024).toLocaleString("vi-VN")} KB`;
 }
 
 function fmtShortMoney(value) {
@@ -1676,7 +1722,7 @@ function defaultOrderItem() {
   const product = state.data.products?.find((item) => item.status === "active");
   const material = (state.data.settings?.material_catalog || []).find((item) => item.id === product?.material_id);
   return {
-    id: "",
+    id: createClientId("itm"),
     product_mode: product ? "catalog" : "custom",
     product_id: product?.id || "",
     product_type: product?.type || "Other",
@@ -1688,8 +1734,33 @@ function defaultOrderItem() {
     size: product?.default_size || "",
     material_id: material?.id || "",
     metal_pricing: { mode: "none", unit: "g", weight: 0, unit_price: 0, material_cost: 0 },
+    image: null,
     specs: { material: material?.name || "", stone: product?.default_stone || "", weight: "" },
   };
+}
+
+function orderItemImageEditor(image) {
+  const storedImage = parseItemImage(image);
+  const hasImage = Boolean(storedImage);
+  return `
+    <div class="field product-image-field">
+      <label>Hình ảnh sản phẩm</label>
+      <div class="product-image-editor ${hasImage ? "has-image" : ""}" data-image-editor>
+        <button class="product-image-preview" type="button" data-action="open-product-image" ${hasImage ? "" : "disabled"} aria-label="Xem ảnh sản phẩm">
+          ${hasImage ? `<img data-storage-image="${esc(storedImage.storage_path)}" alt="${esc(storedImage.original_name || "Ảnh sản phẩm")}"><span data-image-placeholder>Đang tải ảnh...</span>` : `<span data-image-placeholder><i data-lucide="image-plus"></i><small>Chưa có ảnh</small></span>`}
+        </button>
+        <div class="product-image-meta">
+          <div class="product-image-actions">
+            <input data-field="product_image_file" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+            <button class="button" type="button" data-action="choose-order-image"><i data-lucide="upload"></i><span>${hasImage ? "Thay ảnh" : "Tải ảnh lên"}</span></button>
+            <button class="ghost danger-link" type="button" data-action="remove-order-image" ${hasImage ? "" : "hidden"}><i data-lucide="trash-2"></i><span>Xóa ảnh</span></button>
+          </div>
+          <span class="small muted" data-image-status>${hasImage ? `${esc(storedImage.original_name || "Ảnh sản phẩm")} · ${imageSizeLabel(storedImage.size)}` : "JPG, PNG hoặc WEBP · tối đa 5 MB"}</span>
+          <progress data-image-progress max="100" value="0" hidden></progress>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function productItemEditorRow(item, index) {
@@ -1699,8 +1770,12 @@ function productItemEditorRow(item, index) {
     || (state.data.settings?.material_catalog || []).find((entry) => entry.name === specs.material);
   const catalogProduct = (state.data.products || []).find((entry) => entry.id === item.product_id);
   const metalPricing = item.metal_pricing || { mode: "none", unit: material?.default_unit || "g", weight: 0, unit_price: 0, material_cost: 0 };
+  const itemId = item.id || createClientId("itm");
+  const itemImage = parseItemImage(item.image);
+  const unitCost = Number(item.unit_cost || 0);
+  const quantity = Math.max(1, Number(item.quantity || 1));
   return `
-    <article class="editor-item product-item-row mode-${productMode}" data-item-id="${esc(item.id || "")}" data-unit-cost="${Number(item.unit_cost || 0)}" data-metal-pricing="${esc(JSON.stringify(metalPricing))}" data-legacy-weight="${esc(specs.weight || "")}">
+    <article class="editor-item product-item-row mode-${productMode}" data-item-id="${esc(itemId)}" data-unit-cost="${unitCost}" data-image="${esc(itemImage ? JSON.stringify(itemImage) : "")}" data-metal-pricing="${esc(JSON.stringify(metalPricing))}" data-legacy-weight="${esc(specs.weight || "")}">
       <div class="editor-item-header">
         <strong>Sản phẩm ${index + 1}</strong>
         <button class="ghost danger-link icon-only" type="button" data-action="remove-order-item" title="Xóa sản phẩm" aria-label="Xóa sản phẩm"><i data-lucide="trash-2"></i></button>
@@ -1715,12 +1790,17 @@ function productItemEditorRow(item, index) {
         <div class="field custom-only"><label>Loại sản phẩm</label><select data-field="product_type">${optionTags(state.data.meta.product_types, item.product_type || "Other")}</select></div>
         <div class="field product-name-field"><label>Tên / kiểu dáng</label><input data-field="product_name" value="${esc(item.product_name || "")}" required placeholder="Tên mẫu hoặc kiểu dáng" ${productMode === "catalog" ? "readonly" : ""}></div>
         <div class="field compact-field"><label>Số lượng</label><input data-field="quantity" type="number" min="1" step="1" value="${Number(item.quantity || 1)}"></div>
-        <div class="field money-field"><label>Đơn giá</label><input data-field="unit_price" type="number" min="0" step="1000" value="${Number(item.unit_price || 0)}"></div>
+        <div class="field money-field"><label>Đơn giá</label><input data-field="unit_price" data-money-input inputmode="numeric" value="${moneyInputValue(item.unit_price || 0)}"></div>
       </div>
       <div class="product-spec-grid">
         <div class="field"><label>Chất liệu</label><select data-field="material_id">${materialCatalogOptions(material?.id || item.material_id || "")}</select></div>
         <div class="field"><label>Size</label><input data-field="size" value="${esc(item.size || "")}" placeholder="12 / 42cm"></div>
         <div class="field"><label>Đá / charm</label><input data-field="stone" value="${esc(specs.stone || "")}" placeholder="Zircon trắng, ngọc trai..."></div>
+      </div>
+      <div class="product-cost-media-grid">
+        <div class="field custom-only"><label>Giá vốn mẫu</label><input data-field="unit_cost" data-money-input inputmode="numeric" value="${moneyInputValue(unitCost)}" placeholder="0"></div>
+        <div class="field"><label>Giá vốn sản phẩm</label><output class="field-output" data-item-cost-output>${fmtMoney(unitCost * quantity)}</output></div>
+        ${orderItemImageEditor(itemImage)}
       </div>
       <div class="field"><label>Ghi chú yêu cầu sản phẩm</label><textarea data-field="note" rows="2" placeholder="Loại đá, màu, khắc tên, chỉnh thiết kế...">${esc(item.note || "")}</textarea></div>
     </article>
@@ -1734,7 +1814,7 @@ function sourceLineEditorRow(line = {}, index = 0) {
     <div class="source-line source-line-row" data-line-id="${esc(line.id || "")}">
       <select data-field="vendor_id" aria-label="Nhà cung cấp">${optionTags(vendors, line.vendor_id, "Chọn NCC")}</select>
       <input data-field="material" value="${esc(line.material || "")}" placeholder="Vật liệu / dịch vụ ${index + 1}">
-      <input data-field="cost" type="number" min="0" step="1000" value="${Number(line.cost || 0)}" placeholder="Chi phí">
+      <input data-field="cost" data-money-input inputmode="numeric" value="${moneyInputValue(line.cost || 0)}" placeholder="Chi phí">
       <select data-field="status" aria-label="Trạng thái nguồn hàng">${optionTags(statuses, line.status || "Dự kiến")}</select>
       <button class="ghost danger-link icon-only" type="button" data-action="remove-source-line" title="Xóa dòng chi phí" aria-label="Xóa dòng chi phí"><i data-lucide="trash-2"></i></button>
     </div>
@@ -1765,16 +1845,16 @@ function orderCommercialEditor(order = null) {
     <section class="editor-section field full pricing-engine">
       <div class="editor-section-header"><div><h3>Engine báo giá</h3><p class="small muted">Giá đề xuất = (giá vốn + lãi trên giá vốn) + thuế.</p></div><span class="tag">Tự tính</span></div>
       <div class="pricing-grid">
-        <div class="field"><label>Giá vốn mẫu có sẵn</label><output data-pricing-output="item_cost">${fmtMoney(order?.item_cost || 0)}</output></div>
+        <div class="field"><label>Tổng giá vốn sản phẩm</label><output data-pricing-output="item_cost">${fmtMoney(order?.item_cost || 0)}</output></div>
         <div class="field"><label>Chi phí nguồn hàng</label><output data-pricing-output="source_cost">${fmtMoney(order?.source_cost || 0)}</output></div>
         ${Number(order?.material_cost || 0) > 0 ? `<div class="field"><label>Chi phí lịch sử Deal cũ</label><output data-pricing-output="legacy_cost">${fmtMoney(order.material_cost)}</output></div>` : ""}
-        <div class="field"><label>Phí giao dự kiến</label><input name="shipping_cost" type="number" min="0" step="1000" value="${Number(order?.shipping_cost || 0)}"></div>
+        <div class="field"><label>Phí giao dự kiến</label><input name="shipping_cost" data-money-input inputmode="numeric" value="${moneyInputValue(order?.shipping_cost || 0)}"></div>
         <div class="field"><label>Lãi trên giá vốn (%)</label><input name="profit_rate" type="number" min="0" step="0.1" value="${profitRate}"></div>
         <div class="field"><label>Thuế (%)</label><input name="tax_rate" type="number" min="0" step="0.1" value="${taxRate}"></div>
         <div class="field"><label>Tiền lãi dự kiến</label><output data-pricing-output="profit_amount">${fmtMoney(order?.pricing?.profit_amount || 0)}</output></div>
         <div class="field"><label>Tiền thuế</label><output data-pricing-output="tax_amount">${fmtMoney(order?.pricing?.tax_amount || 0)}</output></div>
         <div class="field quote-output"><label>Giá đề xuất</label><output data-pricing-output="suggested_price">${fmtMoney(order?.pricing?.suggested_price || 0)}</output></div>
-        <div class="field quote-price"><label>Giá báo khách</label><input name="price" required type="number" min="0" step="1000" value="${price}"></div>
+        <div class="field quote-price"><label>Giá báo khách</label><input name="price" required data-money-input inputmode="numeric" value="${moneyInputValue(price)}"></div>
       </div>
       <div class="editor-section-actions"><span class="small muted" data-pricing-output="item_subtotal">Tổng đơn giá sản phẩm: ${fmtMoney(price)}</span><button class="button" type="button" data-action="apply-suggested-price"><i data-lucide="calculator"></i><span>Áp dụng giá đề xuất</span></button></div>
     </section>
@@ -1783,6 +1863,7 @@ function orderCommercialEditor(order = null) {
 
 function orderFormTemplate(order = null) {
   const isEdit = Boolean(order);
+  const orderId = order?.id || createClientId("ord");
   const channelOptions = optionTags(state.data.meta.channels, order?.customer?.channel || "");
   const statusOptions = optionTags(state.data.meta.order_statuses, order?.status || "tu_van");
   const provinceOptions = Object.keys(ADDRESS_BOOK).map((province) => `<option value="${esc(province)}">${esc(province)}</option>`).join("");
@@ -1792,8 +1873,8 @@ function orderFormTemplate(order = null) {
   const wardOptions = ADDRESS_BOOK[firstProvince][firstDistrict].map((ward) => `<option value="${esc(ward)}">${esc(ward)}</option>`).join("");
   return `
     <form id="${isEdit ? "orderEditForm" : "orderForm"}" class="form-grid order-editor-form">
+      <input type="hidden" name="id" value="${esc(orderId)}">
       ${isEdit ? `
-        <input type="hidden" name="id" value="${esc(order.id)}">
         <div class="field full"><label>Khách</label><select name="customer_id">${optionTags(state.data.customers.map((customer) => ({ id: customer.id, label: `${customer.full_name} · ${customer.phone}` })), order.customer_id)}</select></div>
       ` : `
         <div class="field"><label>Tên khách</label><input name="customer_full_name" required placeholder="Nguyễn Minh Anh"></div>
@@ -1814,7 +1895,7 @@ function orderFormTemplate(order = null) {
         <section class="editor-section field full payment-initial-section">
           <div class="editor-section-header"><div><h3>Cọc / thanh toán ban đầu</h3><p class="small muted">Thông tin thanh toán được quản lý tách riêng và có thể sửa sau trong chi tiết deal.</p></div></div>
           <div class="payment-editor-grid">
-            <div class="field"><label>Đặt cọc</label><input name="deposit_amount" type="number" min="0" step="1000" placeholder="0"></div>
+            <div class="field"><label>Đặt cọc</label><input name="deposit_amount" data-money-input inputmode="numeric" placeholder="0"></div>
             <div class="field"><label>Phương thức cọc</label><select name="deposit_method"><option>Chuyển khoản</option><option>Tiền mặt</option><option>COD</option><option>Ví</option></select></div>
           </div>
         </section>
@@ -1825,30 +1906,39 @@ function orderFormTemplate(order = null) {
   `;
 }
 
-function collectOrderItems(form) {
+function collectOrderItems(form, imageOverrides = new Map()) {
   return [...form.querySelectorAll(".product-item-row")].map((row) => {
+    const itemId = row.dataset.itemId || createClientId("itm");
+    row.dataset.itemId = itemId;
     const productMode = row.querySelector('[data-field="product_mode"]')?.value || "custom";
     const productId = productMode === "catalog" ? row.querySelector('[data-field="product_id"]')?.value || "" : "";
     const product = state.data.products.find((item) => item.id === productId);
     const materialId = row.querySelector('[data-field="material_id"]')?.value || "";
     const material = (state.data.settings?.material_catalog || []).find((item) => item.id === materialId);
     const quantity = Math.max(1, Number(row.querySelector('[data-field="quantity"]')?.value || 1));
+    const storedImage = parseItemImage(row.dataset.image);
+    const image = imageOverrides.has(itemId)
+      ? imageOverrides.get(itemId)
+      : row.dataset.imageRemoved === "true" ? null : storedImage;
     let legacyMetalPricing = { mode: "none", unit: material?.default_unit || "g", weight: 0, unit_price: 0, material_cost: 0 };
     try { legacyMetalPricing = JSON.parse(row.dataset.metalPricing || "{}"); } catch (error) { /* Preserve a safe zero-cost fallback. */ }
     return {
-      id: row.dataset.itemId || "",
+      id: itemId,
       product_mode: productMode,
       product_id: productId,
       product_sku: product?.sku || "",
       product_type: product?.type || row.querySelector('[data-field="product_type"]')?.value || "Other",
       product_name: row.querySelector('[data-field="product_name"]')?.value.trim() || product?.name || "Sản phẩm",
       quantity,
-      unit_price: Number(row.querySelector('[data-field="unit_price"]')?.value || 0),
-      unit_cost: productMode === "catalog" ? Number(row.dataset.unitCost || 0) : 0,
+      unit_price: readMoneyField(row.querySelector('[data-field="unit_price"]')),
+      unit_cost: productMode === "catalog"
+        ? Number(row.dataset.unitCost || 0)
+        : readMoneyField(row.querySelector('[data-field="unit_cost"]')),
       size: row.querySelector('[data-field="size"]')?.value.trim() || "",
       note: row.querySelector('[data-field="note"]')?.value.trim() || "",
       material_id: materialId,
       metal_pricing: legacyMetalPricing,
+      image,
       specs: {
         material: material?.name || "",
         stone: row.querySelector('[data-field="stone"]')?.value.trim() || "",
@@ -1863,7 +1953,7 @@ function collectSourceLines(form) {
     id: row.dataset.lineId || "",
     vendor_id: row.querySelector('[data-field="vendor_id"]')?.value || "",
     material: row.querySelector('[data-field="material"]')?.value.trim() || "",
-    cost: Number(row.querySelector('[data-field="cost"]')?.value || 0),
+    cost: readMoneyField(row.querySelector('[data-field="cost"]')),
     status: row.querySelector('[data-field="status"]')?.value || "Dự kiến",
   }));
 }
@@ -1881,7 +1971,7 @@ function refreshOrderPricing(form = document.querySelector(".order-editor-form")
   const itemCost = items.reduce((total, item) => total + Number(item.unit_cost || 0) * item.quantity, 0);
   const sourceCost = collectSourceLines(form).reduce((total, line) => total + Number(line.cost || 0), 0);
   const legacyCost = items.reduce((total, item) => total + Number(item.metal_pricing?.material_cost || 0), 0);
-  const shippingCost = Number(form.elements.shipping_cost?.value || 0);
+  const shippingCost = readMoneyField(form.elements.shipping_cost);
   const baseCost = itemCost + sourceCost + legacyCost + shippingCost;
   const profitRate = Number(form.elements.profit_rate?.value || 0);
   const taxRate = Number(form.elements.tax_rate?.value || 0);
@@ -1890,6 +1980,11 @@ function refreshOrderPricing(form = document.querySelector(".order-editor-form")
   const taxAmount = Math.round((beforeTax * taxRate) / 100 / 1000) * 1000;
   const itemSubtotal = items.reduce((total, item) => total + item.unit_price * item.quantity, 0);
   const suggestedPrice = baseCost > 0 ? beforeTax + taxAmount : itemSubtotal;
+  [...form.querySelectorAll(".product-item-row")].forEach((row, index) => {
+    const item = items[index];
+    const output = row.querySelector("[data-item-cost-output]");
+    if (output && item) output.textContent = fmtMoney(Number(item.unit_cost || 0) * item.quantity);
+  });
   setPricingOutput(form, "item_cost", itemCost);
   setPricingOutput(form, "source_cost", sourceCost);
   setPricingOutput(form, "legacy_cost", legacyCost);
@@ -1911,7 +2006,7 @@ function syncProductRowFromCatalog(row) {
   const stoneInput = row.querySelector('[data-field="stone"]');
   const stockNote = row.querySelector("[data-stock-note]");
   if (nameInput) nameInput.value = product.name;
-  if (priceInput) priceInput.value = Number(product.default_price || 0);
+  if (priceInput) setMoneyField(priceInput, product.default_price || 0);
   if (typeInput) typeInput.value = product.type || "Other";
   if (materialInput) materialInput.value = product.material_id || "";
   if (sizeInput) sizeInput.value = product.default_size || "";
@@ -1923,6 +2018,11 @@ function syncProductRowFromCatalog(row) {
 function syncProductModeRow(row, mode, { hydrateCatalog = true } = {}) {
   if (!row) return;
   const nextMode = mode === "catalog" ? "catalog" : "custom";
+  const previousMode = row.querySelector('[data-field="product_mode"]')?.value || nextMode;
+  const costInput = row.querySelector('[data-field="unit_cost"]');
+  if (previousMode === "custom" && nextMode === "catalog" && costInput) {
+    row.dataset.customUnitCost = String(readMoneyField(costInput));
+  }
   row.querySelector('[data-field="product_mode"]').value = nextMode;
   row.classList.toggle("mode-catalog", nextMode === "catalog");
   row.classList.toggle("mode-custom", nextMode === "custom");
@@ -1937,7 +2037,9 @@ function syncProductModeRow(row, mode, { hydrateCatalog = true } = {}) {
     if (productSelect && !productSelect.value) productSelect.value = state.data.products.find((product) => product.status === "active")?.id || "";
     if (hydrateCatalog) syncProductRowFromCatalog(row);
   } else {
-    row.dataset.unitCost = "0";
+    const customUnitCost = previousMode === "catalog" ? Number(row.dataset.customUnitCost || 0) : readMoneyField(costInput);
+    row.dataset.unitCost = String(customUnitCost);
+    if (costInput) setMoneyField(costInput, customUnitCost);
   }
 }
 
@@ -1948,6 +2050,7 @@ function addOrderItemRow() {
   const index = list.querySelectorAll(".product-item-row").length;
   list.insertAdjacentHTML("beforeend", productItemEditorRow(defaultOrderItem(), index));
   syncProductModeRow(list.lastElementChild, list.lastElementChild.querySelector('[data-field="product_mode"]')?.value);
+  bindOrderFormEnhancements(list.lastElementChild);
   refreshOrderPricing(form);
   refreshIcons();
 }
@@ -1959,7 +2062,14 @@ function removeOrderItemRow(button) {
     toast("Deal cần ít nhất một sản phẩm");
     return;
   }
-  button.closest(".product-item-row")?.remove();
+  const row = button.closest(".product-item-row");
+  const storedImage = parseItemImage(row?.dataset.image);
+  if (storedImage) {
+    form._removedImages = form._removedImages || [];
+    form._removedImages.push(storedImage);
+  }
+  if (row?._pendingPreviewUrl) URL.revokeObjectURL(row._pendingPreviewUrl);
+  row?.remove();
   [...form.querySelectorAll(".product-item-row")].forEach((row, index) => {
     const title = row.querySelector(".editor-item-header strong");
     if (title) title.textContent = `Sản phẩm ${index + 1}`;
@@ -1973,6 +2083,7 @@ function addSourceLineRow() {
   if (!list) return;
   const index = list.querySelectorAll(".source-line-row").length;
   list.insertAdjacentHTML("beforeend", sourceLineEditorRow({}, index));
+  window.TrinketMoney.bindMoneyInputs(list.lastElementChild);
   refreshOrderPricing(form);
   refreshIcons();
 }
@@ -1981,18 +2092,221 @@ function removeSourceLineRow(button) {
   const form = button.closest(".order-editor-form");
   const rows = form?.querySelectorAll(".source-line-row") || [];
   if (rows.length <= 1) {
-    rows[0]?.querySelectorAll("input").forEach((input) => { input.value = input.type === "number" ? "0" : ""; });
+    rows[0]?.querySelectorAll("input").forEach((input) => {
+      if (input.matches("[data-money-input]")) setMoneyField(input, 0);
+      else input.value = input.type === "number" ? "0" : "";
+    });
   } else {
     button.closest(".source-line-row")?.remove();
   }
   refreshOrderPricing(form);
 }
 
+function cleanupOrderImagePreviews(form) {
+  if (!form) return;
+  form.querySelectorAll(".product-item-row").forEach((row) => {
+    if (row._pendingPreviewUrl) URL.revokeObjectURL(row._pendingPreviewUrl);
+    row._pendingPreviewUrl = "";
+  });
+}
+
+function renderOrderImagePreview(row, { url = "", name = "", size = 0, status = "" } = {}) {
+  const editor = row?.querySelector("[data-image-editor]");
+  const preview = editor?.querySelector("[data-action='open-product-image']");
+  const statusNode = editor?.querySelector("[data-image-status]");
+  const chooseLabel = editor?.querySelector("[data-action='choose-order-image'] span");
+  const removeButton = editor?.querySelector("[data-action='remove-order-image']");
+  if (!editor || !preview) return;
+  if (url) {
+    preview.innerHTML = "";
+    const image = document.createElement("img");
+    image.src = url;
+    image.alt = name || "Ảnh sản phẩm";
+    preview.appendChild(image);
+    preview.dataset.imageUrl = url;
+    preview.dataset.imageName = name || "Ảnh sản phẩm";
+    preview.disabled = false;
+    editor.classList.add("has-image");
+    if (chooseLabel) chooseLabel.textContent = "Thay ảnh";
+    if (removeButton) removeButton.hidden = false;
+    if (statusNode) statusNode.textContent = status || `${name || "Ảnh sản phẩm"}${size ? ` · ${imageSizeLabel(size)}` : ""}`;
+  } else {
+    preview.innerHTML = '<span data-image-placeholder><i data-lucide="image-plus"></i><small>Chưa có ảnh</small></span>';
+    delete preview.dataset.imageUrl;
+    delete preview.dataset.imageName;
+    preview.disabled = true;
+    editor.classList.remove("has-image");
+    if (chooseLabel) chooseLabel.textContent = "Tải ảnh lên";
+    if (removeButton) removeButton.hidden = true;
+    if (statusNode) statusNode.textContent = status || "JPG, PNG hoặc WEBP · tối đa 5 MB";
+  }
+  refreshIcons();
+}
+
+async function hydrateProductImages(root = document) {
+  const images = [...root.querySelectorAll("img[data-storage-image]")];
+  await Promise.all(images.map(async (image) => {
+    if (image.dataset.loading === "true" || image.dataset.loaded === "true") return;
+    image.dataset.loading = "true";
+    try {
+      const url = await window.TrinketFirebase.productImageUrl(image.dataset.storageImage);
+      if (!image.isConnected || !url) return;
+      image.src = url;
+      image.dataset.loaded = "true";
+      image.hidden = false;
+      const preview = image.closest("[data-action='open-product-image']");
+      if (preview) {
+        preview.dataset.imageUrl = url;
+        preview.dataset.imageName = image.alt || "Ảnh sản phẩm";
+        preview.disabled = false;
+      }
+      image.parentElement?.querySelector("[data-image-placeholder]")?.remove();
+    } catch (error) {
+      if (!image.isConnected) return;
+      const placeholder = image.parentElement?.querySelector("[data-image-placeholder]");
+      if (placeholder) placeholder.textContent = "Không tải được ảnh";
+    } finally {
+      delete image.dataset.loading;
+    }
+  }));
+}
+
+function bindOrderFormEnhancements(form) {
+  if (!form) return;
+  window.TrinketMoney.bindMoneyInputs(form);
+  hydrateProductImages(form);
+}
+
+function validateOrderImageFile(file) {
+  if (!file) throw new Error("Chưa chọn ảnh");
+  if (!ORDER_IMAGE_TYPES.has(file.type)) throw new Error("Ảnh phải là JPG, JPEG, PNG hoặc WEBP");
+  if (file.size > MAX_ORDER_IMAGE_SIZE) throw new Error("Ảnh vượt quá dung lượng tối đa 5 MB");
+  if (file.size <= 0) throw new Error("File ảnh không hợp lệ");
+}
+
+function selectOrderItemImage(input) {
+  const row = input.closest(".product-item-row");
+  const file = input.files?.[0];
+  validateOrderImageFile(file);
+  if (row._pendingPreviewUrl) URL.revokeObjectURL(row._pendingPreviewUrl);
+  row._pendingImageFile = file;
+  row._pendingPreviewUrl = URL.createObjectURL(file);
+  row.dataset.imageRemoved = "false";
+  renderOrderImagePreview(row, {
+    url: row._pendingPreviewUrl,
+    name: file.name,
+    size: file.size,
+    status: `${file.name} · ${imageSizeLabel(file.size)} · sẵn sàng tải lên`,
+  });
+}
+
+function removeOrderItemImage(row) {
+  const storedImage = parseItemImage(row?.dataset.image);
+  if (row?._pendingPreviewUrl) URL.revokeObjectURL(row._pendingPreviewUrl);
+  row._pendingPreviewUrl = "";
+  row._pendingImageFile = null;
+  const fileInput = row?.querySelector('[data-field="product_image_file"]');
+  if (fileInput) fileInput.value = "";
+  row.dataset.imageRemoved = storedImage ? "true" : "false";
+  renderOrderImagePreview(row, { status: storedImage ? "Ảnh sẽ được xóa sau khi lưu deal" : "JPG, PNG hoặc WEBP · tối đa 5 MB" });
+}
+
+function setOrderUploadState(form, uploading) {
+  form.dataset.uploading = uploading ? "true" : "false";
+  form.querySelectorAll("button, input, select, textarea").forEach((control) => {
+    if (uploading) {
+      control.dataset.uploadWasDisabled = control.disabled ? "true" : "false";
+      control.disabled = true;
+    } else if (Object.prototype.hasOwnProperty.call(control.dataset, "uploadWasDisabled")) {
+      control.disabled = control.dataset.uploadWasDisabled === "true";
+      delete control.dataset.uploadWasDisabled;
+    }
+  });
+  modalHost.querySelectorAll('[data-action="save-order"], [data-action="save-order-edit"]').forEach((button) => {
+    button.disabled = uploading;
+    const label = button.querySelector("span");
+    if (label) label.textContent = uploading ? "Đang tải ảnh..." : "Lưu deal";
+  });
+}
+
+function imageExtension(contentType) {
+  if (contentType === "image/png") return "png";
+  if (contentType === "image/webp") return "webp";
+  return "jpg";
+}
+
+async function deleteStoredImages(images, { quiet = false } = {}) {
+  const paths = [...new Set((images || []).map((image) => image?.storage_path).filter(Boolean))];
+  if (!paths.length) return true;
+  const results = await Promise.allSettled(paths.map((path) => window.TrinketFirebase.deleteProductImage(path)));
+  const failed = results.filter((result) => result.status === "rejected").length;
+  if (failed && !quiet) toast(`Đã lưu deal nhưng chưa dọn được ${failed} ảnh cũ`);
+  return failed === 0;
+}
+
+async function uploadPendingOrderImages(form) {
+  const orderId = String(form.elements.id?.value || "");
+  const overrides = new Map();
+  const uploaded = [];
+  const rows = [...form.querySelectorAll(".product-item-row")].filter((row) => row._pendingImageFile);
+  try {
+    for (const row of rows) {
+      const file = row._pendingImageFile;
+      validateOrderImageFile(file);
+      const itemId = row.dataset.itemId;
+      const filename = `${Date.now()}-${createClientId("img").slice(4)}.${imageExtension(file.type)}`;
+      const path = `deal-items/${orderId}/${itemId}/${filename}`;
+      const progress = row.querySelector("[data-image-progress]");
+      const status = row.querySelector("[data-image-status]");
+      if (progress) {
+        progress.hidden = false;
+        progress.value = 0;
+      }
+      const metadata = await window.TrinketFirebase.uploadProductImage(file, path, (percent) => {
+        if (progress) progress.value = percent;
+        if (status) status.textContent = `Đang tải ${file.name}: ${percent}%`;
+      });
+      const image = { ...metadata, uploaded_at: new Date().toISOString() };
+      overrides.set(itemId, image);
+      uploaded.push(image);
+      if (progress) {
+        progress.value = 100;
+        progress.hidden = true;
+      }
+      if (status) status.textContent = `${file.name} · đã tải lên`;
+    }
+    return { overrides, uploaded };
+  } catch (error) {
+    await deleteStoredImages(uploaded, { quiet: true });
+    throw new Error(`Tải ảnh thất bại: ${error.message || "Không xác định"}`);
+  }
+}
+
+function replacedOrRemovedImages(form, overrides) {
+  const images = [...(form._removedImages || [])];
+  form.querySelectorAll(".product-item-row").forEach((row) => {
+    const storedImage = parseItemImage(row.dataset.image);
+    if (!storedImage) return;
+    if (row.dataset.imageRemoved === "true" || overrides.has(row.dataset.itemId)) images.push(storedImage);
+  });
+  return images;
+}
+
+function openProductImageLightbox(url, name = "Ảnh sản phẩm") {
+  if (!url) return;
+  const lightbox = document.createElement("div");
+  lightbox.className = "product-image-lightbox";
+  lightbox.dataset.action = "close-product-image";
+  lightbox.innerHTML = `<div class="product-image-lightbox-content"><img src="${esc(url)}" alt="${esc(name)}"><button class="ghost" type="button" data-action="close-product-image" aria-label="Đóng ảnh"><i data-lucide="x"></i></button></div>`;
+  modalHost.appendChild(lightbox);
+  refreshIcons();
+}
+
 function applySuggestedPrice() {
   const form = document.querySelector(".order-editor-form");
   const output = form?.querySelector('[data-pricing-output="suggested_price"]');
   if (!form || !output) return;
-  form.elements.price.value = Number(output.dataset.value || 0);
+  setMoneyField(form.elements.price, Number(output.dataset.value || 0));
   toast("Đã áp dụng giá đề xuất");
 }
 
@@ -2038,6 +2352,7 @@ function openOrderForm() {
   `;
   bindAddressSelectors();
   document.querySelectorAll("#orderForm .product-item-row").forEach((row) => syncProductModeRow(row, row.querySelector('[data-field="product_mode"]')?.value, { hydrateCatalog: false }));
+  bindOrderFormEnhancements(document.querySelector("#orderForm"));
   refreshOrderPricing(document.querySelector("#orderForm"));
   refreshIcons();
 }
@@ -2200,56 +2515,76 @@ async function deleteCustomer(customerId) {
 async function saveOrderFromForm() {
   const form = document.querySelector("#orderForm");
   if (!form.reportValidity()) return;
+  if (form.dataset.uploading === "true") return;
   if (!window.confirm("Tạo deal mới với thông tin hiện tại?")) return;
   const data = new FormData(form);
-  const items = collectOrderItems(form);
-  const sourcingLines = collectSourceLines(form);
-  const createdOrder = await api("/api/orders", {
-    method: "POST",
-    body: {
-      customer: {
-        full_name: data.get("customer_full_name"),
-        phone: data.get("customer_phone"),
-        channel: data.get("customer_channel"),
-        account: data.get("customer_account"),
-        address: data.get("customer_address"),
-        province: data.get("customer_province"),
-        district: data.get("customer_district"),
-        ward: data.get("customer_ward"),
-      },
-      status: data.get("status"),
-      items,
-      price: Number(data.get("price") || 0),
-      date_order: parseViDate(data.get("date_order")),
-      due_date: parseViDate(data.get("due_date")),
-      assignee: data.get("assignee"),
-      request: data.get("request"),
-      note: data.get("note"),
-      shipping_cost: Number(data.get("shipping_cost") || 0),
-      pricing: {
-        profit_rate: Number(data.get("profit_rate") || 0),
-        tax_rate: Number(data.get("tax_rate") || 0),
-      },
-      sourcing_lines: sourcingLines,
-    },
-  });
-  const depositAmount = Number(data.get("deposit_amount") || 0);
-  if (depositAmount > 0) {
-    await api("/api/payments", {
+  let uploadResult = { overrides: new Map(), uploaded: [] };
+  let orderPersisted = false;
+  setOrderUploadState(form, true);
+  try {
+    uploadResult = await uploadPendingOrderImages(form);
+    const items = collectOrderItems(form, uploadResult.overrides);
+    const sourcingLines = collectSourceLines(form);
+    const price = readMoneyField(form.elements.price);
+    const createdOrder = await api("/api/orders", {
       method: "POST",
       body: {
-        order_id: createdOrder.id,
-        amount: depositAmount,
-        type: depositAmount >= Number(data.get("price") || 0) ? "thanh_toan_du" : "coc",
-        method: data.get("deposit_method"),
+        id: data.get("id"),
+        customer: {
+          full_name: data.get("customer_full_name"),
+          phone: data.get("customer_phone"),
+          channel: data.get("customer_channel"),
+          account: data.get("customer_account"),
+          address: data.get("customer_address"),
+          province: data.get("customer_province"),
+          district: data.get("customer_district"),
+          ward: data.get("customer_ward"),
+        },
+        status: data.get("status"),
+        items,
+        price,
+        date_order: parseViDate(data.get("date_order")),
+        due_date: parseViDate(data.get("due_date")),
+        assignee: data.get("assignee"),
+        request: data.get("request"),
+        note: data.get("note"),
+        shipping_cost: readMoneyField(form.elements.shipping_cost),
+        pricing: {
+          profit_rate: Number(data.get("profit_rate") || 0),
+          tax_rate: Number(data.get("tax_rate") || 0),
+        },
+        sourcing_lines: sourcingLines,
       },
     });
+    orderPersisted = true;
+    const depositAmount = readMoneyField(form.elements.deposit_amount);
+    if (depositAmount > 0) {
+      try {
+        await api("/api/payments", {
+          method: "POST",
+          body: {
+            order_id: createdOrder.id,
+            amount: depositAmount,
+            type: depositAmount >= price ? "thanh_toan_du" : "coc",
+            method: data.get("deposit_method"),
+          },
+        });
+      } catch (error) {
+        toast(`Deal đã tạo nhưng chưa ghi nhận được tiền cọc: ${error.message}`);
+      }
+    }
+    setOrderUploadState(form, false);
+    closeModal();
+    await loadData();
+    toast("Đã tạo deal mới");
+    state.view = "orders";
+    render();
+  } catch (error) {
+    if (!orderPersisted) await deleteStoredImages(uploadResult.uploaded, { quiet: true });
+    throw error;
+  } finally {
+    if (form.isConnected) setOrderUploadState(form, false);
   }
-  closeModal();
-  await loadData();
-  toast("Đã tạo deal mới");
-  state.view = "orders";
-  render();
 }
 
 function openOrderEditor(orderId) {
@@ -2271,6 +2606,7 @@ function openOrderEditor(orderId) {
     </div>
   `;
   document.querySelectorAll("#orderEditForm .product-item-row").forEach((row) => syncProductModeRow(row, row.querySelector('[data-field="product_mode"]')?.value, { hydrateCatalog: false }));
+  bindOrderFormEnhancements(document.querySelector("#orderEditForm"));
   refreshOrderPricing(document.querySelector("#orderEditForm"));
   refreshIcons();
 }
@@ -2278,39 +2614,56 @@ function openOrderEditor(orderId) {
 async function saveOrderEditFromForm() {
   const form = document.querySelector("#orderEditForm");
   if (!form?.reportValidity()) return;
+  if (form.dataset.uploading === "true") return;
   const data = new FormData(form);
   const orderId = data.get("id");
-  await api(`/api/orders/${orderId}`, {
-    method: "PATCH",
-    body: {
-      customer_id: data.get("customer_id"),
-      status: data.get("status"),
-      items: collectOrderItems(form),
-      price: Number(data.get("price") || 0),
-      date_order: parseViDate(data.get("date_order")),
-      due_date: parseViDate(data.get("due_date")),
-      assignee: data.get("assignee"),
-      request: data.get("request"),
-      note: data.get("note"),
-      shipping_cost: Number(data.get("shipping_cost") || 0),
-      pricing: {
-        profit_rate: Number(data.get("profit_rate") || 0),
-        tax_rate: Number(data.get("tax_rate") || 0),
+  let uploadResult = { overrides: new Map(), uploaded: [] };
+  let orderPersisted = false;
+  setOrderUploadState(form, true);
+  try {
+    uploadResult = await uploadPendingOrderImages(form);
+    await api(`/api/orders/${orderId}`, {
+      method: "PATCH",
+      body: {
+        customer_id: data.get("customer_id"),
+        status: data.get("status"),
+        items: collectOrderItems(form, uploadResult.overrides),
+        price: readMoneyField(form.elements.price),
+        date_order: parseViDate(data.get("date_order")),
+        due_date: parseViDate(data.get("due_date")),
+        assignee: data.get("assignee"),
+        request: data.get("request"),
+        note: data.get("note"),
+        shipping_cost: readMoneyField(form.elements.shipping_cost),
+        pricing: {
+          profit_rate: Number(data.get("profit_rate") || 0),
+          tax_rate: Number(data.get("tax_rate") || 0),
+        },
+        sourcing_lines: collectSourceLines(form),
       },
-      sourcing_lines: collectSourceLines(form),
-    },
-  });
-  closeModal();
-  await loadData();
-  toast("Đã cập nhật deal");
-  render();
+    });
+    orderPersisted = true;
+    await deleteStoredImages(replacedOrRemovedImages(form, uploadResult.overrides));
+    setOrderUploadState(form, false);
+    closeModal();
+    await loadData();
+    toast("Đã cập nhật deal");
+    render();
+  } catch (error) {
+    if (!orderPersisted) await deleteStoredImages(uploadResult.uploaded, { quiet: true });
+    throw error;
+  } finally {
+    if (form.isConnected) setOrderUploadState(form, false);
+  }
 }
 
 async function deleteOrder(orderId) {
   const order = state.data.orders.find((item) => item.id === orderId);
   if (!order) return;
   if (!window.confirm(`Xóa deal ${order.order_code}? Payment, nguồn hàng và vận đơn của deal này cũng sẽ bị xóa.`)) return;
+  const storedImages = (order.items || []).map((item) => parseItemImage(item.image)).filter(Boolean);
   await api(`/api/orders/${orderId}`, { method: "DELETE" });
+  await deleteStoredImages(storedImages);
   clearSelection("orders");
   closeModal();
   await loadData();
@@ -2339,7 +2692,12 @@ function openOrderDetail(orderId) {
   const productRows = (order.items || []).map((item) => {
     const catalog = state.data.products.find((product) => product.id === item.product_id);
     const specs = [item.specs?.material, item.size ? `Size ${item.size}` : "", item.specs?.stone, item.specs?.weight].filter(Boolean).join(" · ");
-    return `<tr><td><strong>${esc(catalog?.sku || "Tùy chỉnh")}</strong><br><span class="small muted">${item.product_mode === "custom" ? "Mẫu tùy chỉnh" : "Mẫu có sẵn"}</span></td><td>${esc(item.product_name)}${item.note ? `<br><span class="small muted">${esc(item.note)}</span>` : ""}</td><td>${esc(specs || "-")}</td><td>${fmtNumber(item.quantity)}</td><td class="money">${fmtMoney(item.unit_price * item.quantity)}</td></tr>`;
+    const image = parseItemImage(item.image);
+    const imageCell = image
+      ? `<button class="detail-product-thumbnail" type="button" data-action="open-product-image" disabled aria-label="Xem ${esc(image.original_name || item.product_name)}"><img data-storage-image="${esc(image.storage_path)}" alt="${esc(image.original_name || item.product_name)}" hidden><span data-image-placeholder><i data-lucide="image"></i></span></button>`
+      : '<span class="muted">—</span>';
+    const itemCost = Number(item.unit_cost || 0) * Number(item.quantity || 1);
+    return `<tr><td>${imageCell}</td><td><strong>${esc(catalog?.sku || "Tùy chỉnh")}</strong><br><span class="small muted">${item.product_mode === "custom" ? "Mẫu tùy chỉnh" : "Mẫu có sẵn"}</span></td><td>${esc(item.product_name)}${item.note ? `<br><span class="small muted">${esc(item.note)}</span>` : ""}</td><td>${esc(specs || "-")}</td><td>${fmtNumber(item.quantity)}</td>${canSeeCosts() ? `<td class="money">${fmtMoney(itemCost)}</td>` : ""}<td class="money">${fmtMoney(item.unit_price * item.quantity)}</td></tr>`;
   }).join("");
   const shipmentHistory = order.shipment?.status_history
     ?.map(
@@ -2384,7 +2742,7 @@ function openOrderDetail(orderId) {
                   <h3>Sản phẩm trong deal</h3>
                   <button class="ghost" data-action="edit-orders" data-id="${esc(order.id)}"><i data-lucide="pen-line"></i><span>Sửa sản phẩm</span></button>
                 </div>
-                <div class="table-wrap"><table><thead><tr><th>Mã mẫu</th><th>Sản phẩm / ghi chú</th><th>Thông số</th><th>SL</th><th class="money">Thành tiền</th></tr></thead><tbody>${productRows}</tbody></table></div>
+                <div class="table-wrap"><table><thead><tr><th>Ảnh</th><th>Mã mẫu</th><th>Sản phẩm / ghi chú</th><th>Thông số</th><th>SL</th>${canSeeCosts() ? '<th class="money">Giá vốn</th>' : ""}<th class="money">Thành tiền</th></tr></thead><tbody>${productRows}</tbody></table></div>
               </section>
               <section class="panel">
                 <div class="panel-header"><h3>Nguồn hàng</h3><div class="toolbar-right"><span class="tag">${order.sourcing_lines.length} dòng</span><button class="ghost" data-action="edit-orders" data-id="${esc(order.id)}"><i data-lucide="pen-line"></i><span>Sửa chi phí</span></button></div></div>
@@ -2393,7 +2751,7 @@ function openOrderDetail(orderId) {
               <section class="panel">
                 <div class="panel-header"><h3>Engine báo giá</h3><button class="ghost" data-action="edit-orders" data-id="${esc(order.id)}"><i data-lucide="pen-line"></i><span>Sửa công thức</span></button></div>
                 <div class="panel-body grid-2">
-                  <div class="metric-row"><span>Giá vốn mẫu có sẵn</span><strong>${fmtMoney(order.item_cost)}</strong></div>
+                  <div class="metric-row"><span>Tổng giá vốn sản phẩm</span><strong>${fmtMoney(order.item_cost)}</strong></div>
                   <div class="metric-row"><span>Nguồn hàng / gia công</span><strong>${fmtMoney(order.source_cost)}</strong></div>
                   ${order.material_cost > 0 ? `<div class="metric-row"><span>Chi phí lịch sử Deal cũ</span><strong>${fmtMoney(order.material_cost)}</strong></div>` : ""}
                   <div class="metric-row"><span>Phí giao</span><strong>${fmtMoney(order.shipping_cost)}</strong></div>
@@ -2412,7 +2770,7 @@ function openOrderDetail(orderId) {
                   ${paymentRows ? "" : emptyState("wallet", "Chưa có thanh toán", "Ghi nhận cọc hoặc thanh toán còn lại ngay tại form bên dưới.", `<button class="button" data-action="focus-payment"><i data-lucide="plus"></i><span>Thêm thanh toán</span></button>`)}
                   <form id="paymentForm" class="form-grid">
                     <input type="hidden" name="order_id" value="${esc(order.id)}">
-                    <div class="field"><label>Số tiền</label><input name="amount" type="number" min="0" step="1000" value="${Math.max(0, order.balance_due)}"></div>
+                    <div class="field"><label>Số tiền</label><input name="amount" data-money-input inputmode="numeric" value="${moneyInputValue(Math.max(0, order.balance_due))}"></div>
                     <div class="field"><label>Loại</label><select name="type"><option value="coc">Cọc</option><option value="thanh_toan_con_lai">Thanh toán còn lại</option><option value="thanh_toan_du">Thanh toán đủ</option><option value="hoan_tien">Hoàn tiền</option></select></div>
                     <div class="field"><label>Phương thức</label><select name="method"><option>Chuyển khoản</option><option>Tiền mặt</option><option>COD</option><option>Ví</option></select></div>
                     <div class="field"><label>&nbsp;</label><button class="primary" type="submit"><i data-lucide="wallet"></i><span>Ghi nhận</span></button></div>
@@ -2459,6 +2817,8 @@ function openOrderDetail(orderId) {
       </section>
     </div>
   `;
+  window.TrinketMoney.bindMoneyInputs(modalHost);
+  hydrateProductImages(modalHost);
   refreshIcons();
 }
 
@@ -3114,7 +3474,7 @@ async function submitPayment(event) {
   event.preventDefault();
   const form = event.target;
   const body = Object.fromEntries(new FormData(form).entries());
-  body.amount = Number(body.amount || 0);
+  body.amount = readMoneyField(form.elements.amount);
   await api("/api/payments", { method: "POST", body });
   await loadData();
   toast("Đã ghi nhận thanh toán");
@@ -3134,7 +3494,7 @@ function openPaymentEditor(paymentId) {
         <div class="modal-body">
           <form id="paymentEditForm" class="form-grid">
             <input type="hidden" name="id" value="${esc(payment.id)}"><input type="hidden" name="order_id" value="${esc(payment.order_id)}">
-            <div class="field"><label>Số tiền</label><input name="amount" type="number" min="0" step="1000" value="${Number(payment.amount || 0)}" required></div>
+            <div class="field"><label>Số tiền</label><input name="amount" data-money-input inputmode="numeric" value="${moneyInputValue(payment.amount || 0)}" required></div>
             <div class="field"><label>Loại</label><select name="type">${optionTags([{ id: "coc", label: "Cọc" }, { id: "thanh_toan_con_lai", label: "Thanh toán còn lại" }, { id: "thanh_toan_du", label: "Thanh toán đủ" }, { id: "hoan_tien", label: "Hoàn tiền" }], payment.type)}</select></div>
             <div class="field"><label>Phương thức</label><select name="method">${optionTags(["Chuyển khoản", "Tiền mặt", "COD", "Ví"], payment.method)}</select></div>
             <div class="field"><label>Thời gian</label><input name="paid_at" type="datetime-local" value="${esc(paidAt)}"></div>
@@ -3144,6 +3504,7 @@ function openPaymentEditor(paymentId) {
       </section>
     </div>
   `;
+  window.TrinketMoney.bindMoneyInputs(modalHost);
   refreshIcons();
 }
 
@@ -3156,7 +3517,7 @@ async function savePaymentEditFromForm() {
   await api(`/api/payments/${paymentId}`, {
     method: "PATCH",
     body: {
-      amount: Number(data.get("amount") || 0),
+      amount: readMoneyField(form.elements.amount),
       type: data.get("type"),
       method: data.get("method"),
       paid_at: data.get("paid_at") ? new Date(data.get("paid_at")).toISOString() : new Date().toISOString(),
@@ -3415,6 +3776,11 @@ function bindShell() {
   });
 
   document.addEventListener("keydown", (event) => {
+    const lightbox = modalHost.querySelector(".product-image-lightbox");
+    if (event.key === "Escape" && lightbox) {
+      lightbox.remove();
+      return;
+    }
     const modal = modalHost.querySelector(".modal");
     if (!modal) return;
     if (event.key === "Escape") {
@@ -3501,6 +3867,14 @@ function bindShell() {
   modalHost.addEventListener("change", (event) => {
     const form = event.target.closest(".order-editor-form");
     if (form) {
+      if (event.target.matches('[data-field="product_image_file"]')) {
+        try {
+          selectOrderItemImage(event.target);
+        } catch (error) {
+          event.target.value = "";
+          toast(error.message);
+        }
+      }
       if (event.target.matches('[data-field="product_id"]')) syncProductRowFromCatalog(event.target.closest(".product-item-row"));
       refreshOrderPricing(form);
     }
@@ -3590,6 +3964,13 @@ function bindShell() {
         refreshOrderPricing(row?.closest(".order-editor-form"));
       }
       if (action === "remove-order-item") removeOrderItemRow(actionTarget);
+      if (action === "choose-order-image") actionTarget.closest(".product-item-row")?.querySelector('[data-field="product_image_file"]')?.click();
+      if (action === "remove-order-image") removeOrderItemImage(actionTarget.closest(".product-item-row"));
+      if (action === "open-product-image") openProductImageLightbox(actionTarget.dataset.imageUrl, actionTarget.dataset.imageName);
+      if (action === "close-product-image") {
+        if (actionTarget.classList.contains("product-image-lightbox") && event.target !== actionTarget) return;
+        actionTarget.closest(".product-image-lightbox")?.remove();
+      }
       if (action === "add-source-line") addSourceLineRow();
       if (action === "remove-source-line") removeSourceLineRow(actionTarget);
       if (action === "apply-suggested-price") applySuggestedPrice();

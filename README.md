@@ -118,6 +118,14 @@ Vai trò:
 
 Nếu không truyền `--password`, script sinh mật khẩu tạm. Thêm `--no-print-password` để không in mật khẩu và dùng “Quên mật khẩu” trên màn hình đăng nhập. Sau khi đổi role, người dùng cần đăng xuất/đăng nhập lại để nhận custom claim mới.
 
+## Giá vốn và ảnh sản phẩm trong deal
+
+- Mỗi item dùng `unit_cost` làm giá vốn đơn vị; Engine tính `unit_cost × quantity` rồi cộng nguồn hàng, vật liệu lịch sử và phí giao.
+- Ảnh item được lưu dưới dạng metadata `image.storage_path`, `original_name`, `content_type`, `size`, `uploaded_at`; database không lưu base64 hoặc blob URL.
+- Ảnh mới chỉ được upload khi người dùng bấm Lưu. Nếu API thất bại, ảnh mới được rollback; ảnh cũ chỉ bị xóa sau khi deal cập nhật thành công.
+- Deal cũ thiếu `unit_cost` hoặc `image` tiếp tục được normalize về `0` và `null`, không cần migration Firestore.
+- Các ô tiền trong luồng deal hiển thị dấu chấm hàng nghìn bằng utility `public/money.js`, nhưng API và Firestore vẫn nhận số nguyên.
+
 ## Kiểm thử
 
 ```bash

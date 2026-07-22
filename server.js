@@ -134,6 +134,44 @@ function money(value) {
   return Number(value || 0);
 }
 
+const ORDER_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const MAX_ORDER_IMAGE_SIZE = 5 * 1024 * 1024;
+
+function validClientId(value, prefix) {
+  return new RegExp(`^${prefix}_[A-Za-z0-9_-]{8,80}$`).test(String(value || ""));
+}
+
+function normalizeOrderItemImage(image, orderId, itemId) {
+  if (!image || typeof image !== "object") return null;
+  const storagePath = String(image.storage_path || "").trim();
+  const contentType = String(image.content_type || "").toLowerCase();
+  const size = Math.max(0, Number(image.size || 0));
+  const expectedPrefix = `deal-items/${orderId}/${itemId}/`;
+  if (!storagePath.startsWith(expectedPrefix) || storagePath.includes("..")) return null;
+  if (!ORDER_IMAGE_TYPES.has(contentType) || !Number.isFinite(size) || size <= 0 || size > MAX_ORDER_IMAGE_SIZE) return null;
+  return {
+    storage_path: storagePath,
+    original_name: String(image.original_name || "image").slice(0, 255),
+    content_type: contentType,
+    size,
+    uploaded_at: image.uploaded_at || new Date().toISOString(),
+  };
+}
+
+function prepareIncomingOrderItems(items, orderId) {
+  const seen = new Set();
+  return items.map((item) => {
+    const itemId = item.id || id("itm");
+    if (!validClientId(itemId, "itm")) throw new Error("Invalid product item ID");
+    if (seen.has(itemId)) throw new Error("Duplicate product item ID");
+    seen.add(itemId);
+    if (item.image && !normalizeOrderItemImage(item.image, orderId, itemId)) {
+      throw new Error("Invalid product image metadata");
+    }
+    return { ...item, id: itemId };
+  });
+}
+
 function normalizeProduct(product, index = 0) {
   const fallbackId = `prd_${String(index + 1).padStart(3, "0")}`;
   const productId = product?.id || fallbackId;
@@ -224,6 +262,7 @@ function normalizeOrderItems(order, data) {
       ];
 
   return rawItems.map((item, index) => {
+    const itemId = item.id || `itm_${order.id || "new"}_${index + 1}`;
     const product = catalog.find((entry) => entry.id === item.product_id);
     const material = materials.find((entry) => entry.id === item.material_id)
       || materials.find((entry) => entry.name === item.specs?.material);
@@ -236,7 +275,7 @@ function normalizeOrderItems(order, data) {
     const materialCost = metalMode === "none" ? 0 : Math.round(metalUnitPrice * metalWeight * quantity);
     const productMode = item.product_mode === "custom" || (!item.product_id && item.product_mode !== "catalog") ? "custom" : "catalog";
     return {
-      id: item.id || `itm_${order.id || "new"}_${index + 1}`,
+      id: itemId,
       product_id: item.product_id || "",
       product_mode: productMode,
       product_sku: item.product_sku || product?.sku || "",
@@ -255,6 +294,7 @@ function normalizeOrderItems(order, data) {
         unit_price: metalUnitPrice,
         material_cost: materialCost,
       },
+      image: normalizeOrderItemImage(item.image, order.id, itemId),
       specs: {
         material: item.specs?.material || material?.name || "",
         stone: item.specs?.stone || "",
@@ -1533,7 +1573,14 @@ async function routeApi(req, res, pathname, searchParams) {
     if (!customerId || !findById(data.customers, customerId)) {
       return json(res, 400, { error: "A valid customer is required" });
     }
-    const orderId = id("ord");
+    const requestedOrderId = String(body.id || "").trim();
+    if (requestedOrderId && !validClientId(requestedOrderId, "ord")) {
+      return json(res, 400, { error: "Invalid order ID" });
+    }
+    if (requestedOrderId && findById(data.orders, requestedOrderId)) {
+      return json(res, 409, { error: "Order ID already exists" });
+    }
+    const orderId = requestedOrderId || id("ord");
     const rawItems = Array.isArray(body.items) && body.items.length
       ? body.items
       : [{
@@ -1546,7 +1593,13 @@ async function routeApi(req, res, pathname, searchParams) {
           size: body.size || "",
           specs: body.product_specs || {},
         }];
-    const items = normalizeOrderItems({ id: orderId, items: rawItems.map((item) => ({ ...item, id: item.id || id("itm") })) }, data);
+    let preparedItems;
+    try {
+      preparedItems = prepareIncomingOrderItems(rawItems, orderId);
+    } catch (error) {
+      return json(res, 400, { error: error.message });
+    }
+    const items = normalizeOrderItems({ id: orderId, items: preparedItems }, data);
     const firstItem = items[0];
     const itemSubtotal = items.reduce((sum, item) => sum + money(item.unit_price) * Number(item.quantity || 1), 0);
     const order = {
@@ -1638,7 +1691,13 @@ async function routeApi(req, res, pathname, searchParams) {
       }
     });
     if (Array.isArray(body.items) && body.items.length) {
-      order.items = normalizeOrderItems({ ...order, items: body.items }, data).map((item) => ({ ...item, id: item.id || id("itm") }));
+      let preparedItems;
+      try {
+        preparedItems = prepareIncomingOrderItems(body.items, order.id);
+      } catch (error) {
+        return json(res, 400, { error: error.message });
+      }
+      order.items = normalizeOrderItems({ ...order, items: preparedItems }, data);
       const firstItem = order.items[0];
       order.product_id = firstItem.product_id;
       order.product_type = firstItem.product_type;
