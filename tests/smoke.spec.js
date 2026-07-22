@@ -1,0 +1,141 @@
+const { test, expect } = require("@playwright/test");
+
+test.use({ channel: "chrome" });
+
+test("core screens, recommendation fixes, and modals render without client errors", async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+  page.on("dialog", (dialog) => dialog.accept());
+
+  await page.goto(process.env.BASE_URL || "http://localhost:4173", { waitUntil: "networkidle" });
+  await expect(page.locator(".kpi-card")).toHaveCount(4);
+  await expect(page.locator(".todo-row").first()).toBeVisible();
+  await expect(page.locator("[data-action='edit-revenue-targets']").first()).toBeVisible();
+  await page.locator("[data-action='edit-revenue-targets']").first().click();
+  await expect(page.locator("#revenueTargetForm")).toBeVisible();
+  await expect(page.locator(".goal-editor-row")).toHaveCount(1);
+  await page.locator("[data-action='add-business-goal']").click();
+  await expect(page.locator(".goal-editor-row")).toHaveCount(2);
+  await page.locator("#newGoalMonth").fill("2027-12");
+  await page.locator("[data-action='add-goal-month']").click();
+  await expect(page.locator('[data-target-month="2027-12"]')).toHaveCount(2);
+  await page.locator("[aria-label='Đóng']").click();
+  const trendTexts = await page.locator(".trend").evaluateAll((nodes) => nodes.map((node) => node.textContent || ""));
+  expect(trendTexts.join(" ")).not.toContain("% so kỳ trước");
+  await page.locator("#globalSearch").fill("Linh");
+  await expect(page.locator(".filter-notice")).toContainText("Đang lọc");
+  await page.locator("[data-action='clear-search']").click();
+  await expect(page.locator("#globalSearch")).toHaveValue("");
+
+  await page.locator(".nav-item[data-view='orders']").click();
+  await expect(page.locator("#statusFilter")).toBeVisible();
+  await expect(page.locator("[data-action='edit-orders']").first()).toBeVisible();
+  await expect(page.locator("[data-action='delete-orders']").first()).toBeVisible();
+  await expect(page.locator(".orders-table-scroll")).toBeVisible();
+  await page.locator(".orders-table [data-action='toggle-select']").first().check();
+  await expect(page.locator(".bulk-bar")).toContainText("Sửa hàng loạt");
+  await page.locator("[data-action='clear-selection'][data-entity='orders']").click();
+  await page.locator("[data-action='edit-orders']").first().click();
+  await expect(page.locator("#orderEditForm .product-item-row").first()).toBeVisible();
+  await expect(page.locator("#orderEditForm .source-line-row").first()).toBeVisible();
+  await page.locator("[aria-label='Đóng']").click();
+
+  await page.locator("[data-action='new-order']").click();
+  await expect(page.locator("#orderForm")).toBeVisible();
+  await expect(page.locator("input[name='due_date']")).toHaveAttribute("placeholder", "dd/mm/yyyy");
+  await expect(page.locator("#provinceSelect")).toBeVisible();
+  await expect(page.locator(".product-item-row")).toHaveCount(1);
+  await expect(page.locator('.product-item-row [data-field="material_id"]')).toBeVisible();
+  await expect(page.locator('.product-item-row [data-action="set-product-mode"]')).toHaveCount(2);
+  await expect(page.getByText("Tính giá kim loại")).toHaveCount(0);
+  await expect(page.locator('[data-pricing-output="item_cost"]')).toBeVisible();
+  await page.locator('.product-item-row [data-action="set-product-mode"][data-mode="custom"]').click();
+  await expect(page.locator('.product-item-row .custom-only')).toBeVisible();
+  await expect(page.locator('.product-item-row .catalog-only')).toBeHidden();
+  await expect(page.getByText("Engine báo giá")).toBeVisible();
+  await expect(page.getByText("Bảo hành")).toHaveCount(0);
+  await page.locator("[data-action='add-order-item']").click();
+  await expect(page.locator(".product-item-row")).toHaveCount(2);
+  await page.locator(".product-item-row").last().locator("[data-action='remove-order-item']").click();
+  await expect(page.locator(".product-item-row")).toHaveCount(1);
+  await page.locator(".source-line-row [data-field='cost']").first().fill("1000000");
+  await page.locator("input[name='profit_rate']").fill("30");
+  await page.locator("input[name='tax_rate']").fill("10");
+  await expect(page.locator("[data-pricing-output='suggested_price']")).toContainText("1.430.000");
+  await page.locator("[data-action='apply-suggested-price']").click();
+  await expect(page.locator("input[name='price']")).toHaveValue("1430000");
+  await page.locator("[aria-label='Đóng']").click();
+
+  await page.locator(".nav-item[data-view='products']").click();
+  await expect(page.getByText("Mẫu có sẵn").first()).toBeVisible();
+  await expect(page.locator(".product-table tbody tr").first()).toBeVisible();
+  await expect(page.locator("[data-action='edit-product']").first()).toBeVisible();
+  await expect(page.locator("[data-action='adjust-stock']").first()).toBeVisible();
+  await page.locator("[data-action='edit-product']").first().click();
+  await expect(page.locator("#productForm")).toBeVisible();
+  await page.locator("[aria-label='Đóng']").click();
+  await page.locator("[data-action='set-product-tab'][data-tab='attributes']").click();
+  await expect(page.getByText("Thuộc tính sản phẩm")).toBeVisible();
+  await page.locator("[data-action='edit-material']").first().click();
+  await expect(page.locator("#materialForm")).toBeVisible();
+  await page.locator("[aria-label='Đóng']").click();
+
+  await page.locator(".nav-item[data-view='orders']").click();
+  await page.locator("[data-action='open-order']").first().click();
+  await expect(page.locator("#paymentForm")).toBeVisible();
+  await expect(page.getByText("Sản phẩm trong deal")).toBeVisible();
+  await expect(page.getByText("Engine báo giá")).toBeVisible();
+  await expect(page.locator("[data-action='edit-orders']").first()).toBeVisible();
+  await expect(page.locator("[data-action='create-shipment'], [data-action='sync-shipment']").first()).toBeVisible();
+  await page.locator("[aria-label='Đóng']").click();
+
+  await page.locator(".nav-item[data-view='customers']").click();
+  await expect(page.locator("[data-action='edit-customers']").first()).toBeVisible();
+  await expect(page.locator("[data-action='delete-customers']").first()).toBeVisible();
+  await page.locator("[data-action='toggle-select'][data-entity='customers']").first().check();
+  await expect(page.locator(".bulk-bar")).toContainText("Sửa hàng loạt");
+  await page.locator("[data-action='clear-selection'][data-entity='customers']").click();
+  await page.locator("[data-action='open-customer']").first().click();
+  await expect(page.getByText("Hồ sơ CRM")).toBeVisible();
+  await page.locator("[aria-label='Đóng']").click();
+
+  await page.locator(".nav-item[data-view='vendors']").click();
+  await expect(page.locator("[data-action='edit-vendors']").first()).toBeVisible();
+  await expect(page.locator("[data-action='delete-vendors']").first()).toBeVisible();
+  await page.locator("[data-action='toggle-select'][data-entity='vendors']").first().check();
+  await expect(page.locator(".bulk-bar")).toContainText("Sửa hàng loạt");
+  await page.locator("[data-action='clear-selection'][data-entity='vendors']").click();
+  await page.locator("[data-action='edit-metal-prices']").click();
+  await expect(page.locator("#metalPriceForm")).toBeVisible();
+  await expect(page.locator(".metal-rule-row").first()).toBeVisible();
+  await expect(page.locator('.metal-rule-row [data-field="mode"]').first()).toBeVisible();
+  await page.locator('.metal-rule-row [data-field="mode"]').first().selectOption("percent");
+  await page.locator('.metal-rule-row [data-field="value"]').first().fill("5");
+  await expect(page.locator('.metal-rule-row [data-field="result"]').first()).not.toHaveText("0 ₫");
+  await page.locator("[aria-label='Đóng']").click();
+
+  await page.locator(".nav-item[data-view='shipping']").click();
+  await expect(page.locator("[data-action='edit-shipments']").first()).toBeVisible();
+  await expect(page.locator("[data-action='delete-shipments']").first()).toBeVisible();
+  await page.locator("[data-action='toggle-select'][data-entity='shipments']").first().check();
+  await expect(page.locator(".bulk-bar")).toContainText("Sửa hàng loạt");
+  await page.locator("[data-action='clear-selection'][data-entity='shipments']").click();
+
+  await page.locator(".nav-item[data-view='settings']").click();
+  await expect(page.getByText("Audit log")).toBeVisible();
+  await expect(page.getByText("Danh mục mẫu sản phẩm")).toHaveCount(0);
+
+  await page.locator(".nav-item[data-view='finance']").click();
+  await expect(page.locator("#expenseForm")).toBeVisible();
+  await expect(page.getByText("Tuổi nợ").first()).toBeVisible();
+  await expect(page.locator("#expenseForm input[name='date']")).toHaveAttribute("placeholder", "dd/mm/yyyy");
+  await expect(page.locator(".kpi-card .lucide-banknote")).toBeVisible();
+  await expect(page.getByText("Sao chép lời nhắc").first()).toBeVisible();
+  await expect(page.locator("[data-action='edit-expense']").first()).toBeVisible();
+  await expect(page.locator("[data-action='delete-expense']").first()).toBeVisible();
+
+  expect(errors).toEqual([]);
+});

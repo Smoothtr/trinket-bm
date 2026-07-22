@@ -1,0 +1,735 @@
+{
+  "schema_version": 2,
+  "customers": [
+    {
+      "id": "cus_minh_anh",
+      "full_name": "Nguyễn Minh Anh",
+      "phone": "0909123456",
+      "address": "12 Nguyễn Trãi, Quận 1",
+      "channel": "Instagram",
+      "account": "@minhanh.ng",
+      "province": "TP. Hồ Chí Minh",
+      "district": "Quận 1",
+      "ward": "Phường Bến Thành",
+      "note": "Thích đá zircon trắng, size nhẫn 12",
+      "created_at": "2026-04-08T09:12:00.000Z"
+    },
+    {
+      "id": "cus_thao_linh",
+      "full_name": "Trần Thảo Linh",
+      "phone": "0918001122",
+      "address": "88 Láng Hạ, Đống Đa",
+      "channel": "Facebook",
+      "account": "linhtran",
+      "province": "Hà Nội",
+      "district": "Đống Đa",
+      "ward": "Láng Hạ",
+      "note": "Khách quay lại, thích nhẫn mảnh",
+      "created_at": "2026-04-21T07:45:00.000Z"
+    },
+    {
+      "id": "cus_mai_phuong",
+      "full_name": "Lê Mai Phương",
+      "phone": "0933557890",
+      "address": "45 Bạch Đằng, Hải Châu",
+      "channel": "TikTok",
+      "account": "@phuongwears",
+      "province": "Đà Nẵng",
+      "district": "Hải Châu",
+      "ward": "Thạch Thang",
+      "note": "Thường mua quà sinh nhật",
+      "created_at": "2026-05-02T11:30:00.000Z"
+    },
+    {
+      "id": "cus_bao_ngoc",
+      "full_name": "Phạm Bảo Ngọc",
+      "phone": "0988776655",
+      "address": "10 Võ Văn Ngân, Thủ Đức",
+      "channel": "Giới thiệu",
+      "account": "",
+      "province": "TP. Hồ Chí Minh",
+      "district": "Thủ Đức",
+      "ward": "Linh Chiểu",
+      "note": "Ưu tiên giao cuối tuần",
+      "created_at": "2026-05-10T14:20:00.000Z"
+    },
+    {
+      "id": "cus_hong_nhung",
+      "full_name": "Đặng Hồng Nhung",
+      "phone": "0977112233",
+      "address": "22 Lê Lợi, Huế",
+      "channel": "Website",
+      "account": "nhung.dang@example.com",
+      "province": "Thừa Thiên Huế",
+      "district": "Huế",
+      "ward": "Phú Hội",
+      "note": "Cần hóa đơn tiếng Anh",
+      "created_at": "2026-05-16T08:05:00.000Z"
+    }
+  ],
+  "vendors": [
+    {
+      "id": "ven_luxury_gems",
+      "name": "Luxury Gems",
+      "type": "Đá quý",
+      "contact": "Ms. Hương",
+      "phone": "0900111222",
+      "address": "Quận 5, TP. Hồ Chí Minh",
+      "note": "Zircon, moissanite; giao 1-2 ngày"
+    },
+    {
+      "id": "ven_anh_hao",
+      "name": "Anh Hào",
+      "type": "Vàng-bạc",
+      "contact": "Anh Hào",
+      "phone": "0912333444",
+      "address": "Tân Bình, TP. Hồ Chí Minh",
+      "note": "Bạc 925, vàng 10k/14k"
+    },
+    {
+      "id": "ven_anh_hoan",
+      "name": "Anh Hoàn",
+      "type": "Gia công",
+      "contact": "Anh Hoàn",
+      "phone": "0905555666",
+      "address": "Quận 3, TP. Hồ Chí Minh",
+      "note": "Gia công nhẫn custom"
+    },
+    {
+      "id": "ven_moc_box",
+      "name": "Mộc Box",
+      "type": "Khác",
+      "contact": "Team Mộc",
+      "phone": "0922222333",
+      "address": "Bình Thạnh, TP. Hồ Chí Minh",
+      "note": "Hộp, túi, thiệp cảm ơn"
+    }
+  ],
+  "products": [
+    {
+      "id": "prd_zircon_wave",
+      "sku": "ZIRCON-WAVE",
+      "type": "Ring",
+      "name": "Nhẫn bạc uốn đá zircon",
+      "default_price": 1850000,
+      "default_cost": 1160000,
+      "material_id": "mat_silver_925",
+      "default_size": "12",
+      "default_stone": "Zircon trắng",
+      "status": "active",
+      "track_inventory": false,
+      "low_stock_threshold": 1,
+      "image": ""
+    },
+    {
+      "id": "prd_pearl_chain",
+      "sku": "PEARL-CHAIN",
+      "type": "Necklace",
+      "name": "Dây chuyền ngọc trai mini",
+      "default_price": 2450000,
+      "default_cost": 1580000,
+      "material_id": "mat_silver_925",
+      "default_size": "42cm",
+      "default_stone": "Ngọc trai mini",
+      "status": "active",
+      "track_inventory": false,
+      "low_stock_threshold": 1,
+      "image": ""
+    },
+    {
+      "id": "prd_lucky_charm",
+      "sku": "LUCKY-CHARM",
+      "type": "Bracelet",
+      "name": "Vòng charm may mắn",
+      "default_price": 1590000,
+      "default_cost": 890000,
+      "default_size": "16cm",
+      "status": "active",
+      "track_inventory": false,
+      "low_stock_threshold": 1,
+      "image": ""
+    },
+    {
+      "id": "prd_twist_10k",
+      "sku": "TWIST-10K",
+      "type": "Ring",
+      "name": "Nhẫn vàng 10k twist",
+      "default_price": 6200000,
+      "default_cost": 4680000,
+      "material_id": "mat_gold_10k",
+      "default_size": "10",
+      "default_stone": "Không đá",
+      "status": "active",
+      "track_inventory": false,
+      "low_stock_threshold": 1,
+      "image": ""
+    }
+  ],
+  "inventory_movements": [],
+  "orders": [
+    {
+      "id": "ord_1001",
+      "order_code": "TRK-2026-0001",
+      "customer_id": "cus_minh_anh",
+      "status": "hoan_tat",
+      "product_type": "Ring",
+      "product_name": "Nhẫn bạc uốn đá zircon",
+      "size": "12",
+      "price": 1850000,
+      "request": "Đá trắng, lòng nhẫn khắc M.A",
+      "date_order": "2026-04-12",
+      "due_date": "2026-04-22",
+      "payment_date": "2026-04-20",
+      "payment_status": "du_tien",
+      "shipping_cost": 34000,
+      "shipment_id": "shp_1001",
+      "assignee": "Linh",
+      "product_specs": {
+        "material": "Bạc 925",
+        "stone": "Zircon trắng",
+        "weight": "3.1g",
+        "warranty": "Làm sạch 6 tháng"
+      },
+      "attachments": [],
+      "note": "Đã gửi ảnh hoàn thiện trước khi giao",
+      "created_at": "2026-04-12T08:30:00.000Z",
+      "updated_at": "2026-04-22T09:10:00.000Z"
+    },
+    {
+      "id": "ord_1002",
+      "order_code": "TRK-2026-0002",
+      "customer_id": "cus_thao_linh",
+      "status": "san_xuat",
+      "product_type": "Ring",
+      "product_name": "Nhẫn vàng 10k twist",
+      "size": "10",
+      "price": 6200000,
+      "request": "Form mảnh, đánh bóng gương",
+      "date_order": "2026-05-05",
+      "due_date": "2026-06-03",
+      "payment_date": "2026-05-05",
+      "payment_status": "da_coc",
+      "shipping_cost": 0,
+      "shipment_id": null,
+      "assignee": "Linh",
+      "product_specs": {
+        "material": "Vàng 10k",
+        "stone": "Không đá",
+        "weight": "0.7 chỉ",
+        "warranty": "Bảo hành làm sạch và đánh bóng 12 tháng"
+      },
+      "attachments": [],
+      "note": "Đợi xác nhận trọng lượng sau khi ra sáp",
+      "created_at": "2026-05-05T10:20:00.000Z",
+      "updated_at": "2026-05-20T12:05:00.000Z"
+    },
+    {
+      "id": "ord_1003",
+      "order_code": "TRK-2026-0003",
+      "customer_id": "cus_mai_phuong",
+      "status": "cho_giao",
+      "product_type": "Necklace",
+      "product_name": "Dây chuyền ngọc trai mini",
+      "size": "42cm",
+      "price": 2450000,
+      "request": "Gói quà sinh nhật",
+      "date_order": "2026-05-12",
+      "due_date": "2026-05-30",
+      "payment_date": "2026-05-12",
+      "payment_status": "du_tien",
+      "shipping_cost": 0,
+      "shipment_id": null,
+      "assignee": "Hà",
+      "product_specs": {
+        "material": "Bạc 925",
+        "stone": "Ngọc trai mini",
+        "weight": "42cm",
+        "warranty": "Làm sạch 6 tháng"
+      },
+      "attachments": [],
+      "note": "Sẵn sàng tạo vận đơn",
+      "created_at": "2026-05-12T09:50:00.000Z",
+      "updated_at": "2026-05-29T13:40:00.000Z"
+    },
+    {
+      "id": "ord_1004",
+      "order_code": "TRK-2026-0004",
+      "customer_id": "cus_bao_ngoc",
+      "status": "dang_giao",
+      "product_type": "Bracelet",
+      "product_name": "Vòng charm may mắn",
+      "size": "16cm",
+      "price": 1590000,
+      "request": "Charm cỏ bốn lá",
+      "date_order": "2026-05-17",
+      "due_date": "2026-05-31",
+      "payment_date": "2026-05-17",
+      "payment_status": "da_coc",
+      "shipping_cost": 41000,
+      "shipment_id": "shp_1004",
+      "assignee": "Hà",
+      "attachments": [],
+      "note": "COD phần còn lại",
+      "created_at": "2026-05-17T12:30:00.000Z",
+      "updated_at": "2026-05-28T16:00:00.000Z"
+    },
+    {
+      "id": "ord_1005",
+      "order_code": "TRK-2026-0005",
+      "customer_id": "cus_hong_nhung",
+      "status": "cho_coc",
+      "product_type": "Earrings",
+      "product_name": "Khuyên tai zircon drop",
+      "size": "",
+      "price": 2190000,
+      "request": "Hóa đơn tiếng Anh, ship Huế",
+      "date_order": "2026-05-24",
+      "due_date": "2026-06-08",
+      "payment_date": "",
+      "payment_status": "chua_coc",
+      "shipping_cost": 0,
+      "shipment_id": null,
+      "assignee": "Linh",
+      "attachments": [],
+      "note": "Chờ khách xác nhận cọc",
+      "created_at": "2026-05-24T08:00:00.000Z",
+      "updated_at": "2026-05-24T08:00:00.000Z"
+    },
+    {
+      "id": "ord_1006",
+      "order_code": "TRK-2026-0006",
+      "customer_id": "cus_minh_anh",
+      "status": "dat_nguon",
+      "product_type": "Ring",
+      "product_name": "Nhẫn đôi bạc 925",
+      "size": "11 / 18",
+      "price": 3200000,
+      "request": "Khắc ngày kỷ niệm bên trong",
+      "date_order": "2026-05-26",
+      "due_date": "2026-06-12",
+      "payment_date": "2026-05-26",
+      "payment_status": "da_coc",
+      "shipping_cost": 0,
+      "shipment_id": null,
+      "assignee": "Hà",
+      "attachments": [],
+      "note": "Đã đặt bạc và đá",
+      "created_at": "2026-05-26T15:20:00.000Z",
+      "updated_at": "2026-05-30T10:15:00.000Z"
+    },
+    {
+      "id": "ord_1007",
+      "order_code": "TRK-2026-0007",
+      "customer_id": "cus_thao_linh",
+      "status": "tu_van",
+      "product_type": "Bracelet",
+      "product_name": "Vòng tay bạc mix ngọc trai",
+      "size": "15.5cm",
+      "price": 1750000,
+      "request": "Gửi 2 phương án charm",
+      "date_order": "2026-05-30",
+      "due_date": "2026-06-18",
+      "payment_date": "",
+      "payment_status": "chua_coc",
+      "shipping_cost": 0,
+      "shipment_id": null,
+      "assignee": "Linh",
+      "attachments": [],
+      "note": "",
+      "created_at": "2026-05-30T11:10:00.000Z",
+      "updated_at": "2026-05-30T11:10:00.000Z"
+    },
+    {
+      "id": "ord_1008",
+      "order_code": "TRK-2026-0008",
+      "customer_id": "cus_mai_phuong",
+      "status": "huy_hoan",
+      "product_type": "Ring",
+      "product_name": "Nhẫn bạc open band",
+      "size": "13",
+      "price": 1390000,
+      "request": "Hủy do khách đổi kế hoạch",
+      "date_order": "2026-04-29",
+      "due_date": "2026-05-10",
+      "payment_date": "",
+      "payment_status": "chua_coc",
+      "shipping_cost": 0,
+      "shipment_id": null,
+      "assignee": "Hà",
+      "attachments": [],
+      "note": "Không phát sinh chi phí",
+      "created_at": "2026-04-29T08:40:00.000Z",
+      "updated_at": "2026-05-01T09:00:00.000Z"
+    }
+  ],
+  "order_sourcing_lines": [
+    {
+      "id": "src_1001_a",
+      "order_id": "ord_1001",
+      "vendor_id": "ven_anh_hao",
+      "material": "Bạc 925",
+      "cost": 690000,
+      "gold_karat": "",
+      "weight": 0,
+      "status": "Hoàn tất"
+    },
+    {
+      "id": "src_1001_b",
+      "order_id": "ord_1001",
+      "vendor_id": "ven_luxury_gems",
+      "material": "Zircon trắng",
+      "cost": 220000,
+      "gold_karat": "",
+      "weight": 0,
+      "status": "Hoàn tất"
+    },
+    {
+      "id": "src_1001_c",
+      "order_id": "ord_1001",
+      "vendor_id": "ven_anh_hoan",
+      "material": "Gia công + khắc",
+      "cost": 280000,
+      "gold_karat": "",
+      "weight": 0,
+      "status": "Hoàn tất"
+    },
+    {
+      "id": "src_1002_a",
+      "order_id": "ord_1002",
+      "vendor_id": "ven_anh_hao",
+      "material": "Vàng 10k",
+      "cost": 3480000,
+      "gold_karat": "10k",
+      "weight": 0.7,
+      "status": "Đã nhận"
+    },
+    {
+      "id": "src_1002_b",
+      "order_id": "ord_1002",
+      "vendor_id": "ven_anh_hoan",
+      "material": "Gia công nhẫn twist",
+      "cost": 920000,
+      "gold_karat": "",
+      "weight": 0,
+      "status": "Đang gia công"
+    },
+    {
+      "id": "src_1003_a",
+      "order_id": "ord_1003",
+      "vendor_id": "ven_luxury_gems",
+      "material": "Ngọc trai mini",
+      "cost": 760000,
+      "gold_karat": "",
+      "weight": 0,
+      "status": "Hoàn tất"
+    },
+    {
+      "id": "src_1003_b",
+      "order_id": "ord_1003",
+      "vendor_id": "ven_anh_hao",
+      "material": "Dây bạc 925",
+      "cost": 520000,
+      "gold_karat": "",
+      "weight": 0,
+      "status": "Hoàn tất"
+    },
+    {
+      "id": "src_1004_a",
+      "order_id": "ord_1004",
+      "vendor_id": "ven_anh_hao",
+      "material": "Bạc 925 + charm",
+      "cost": 610000,
+      "gold_karat": "",
+      "weight": 0,
+      "status": "Hoàn tất"
+    },
+    {
+      "id": "src_1004_b",
+      "order_id": "ord_1004",
+      "vendor_id": "ven_moc_box",
+      "material": "Hộp quà",
+      "cost": 45000,
+      "gold_karat": "",
+      "weight": 0,
+      "status": "Hoàn tất"
+    },
+    {
+      "id": "src_1005_a",
+      "order_id": "ord_1005",
+      "vendor_id": "ven_luxury_gems",
+      "material": "Zircon pear cut",
+      "cost": 480000,
+      "gold_karat": "",
+      "weight": 0,
+      "status": "Đã báo giá"
+    },
+    {
+      "id": "src_1006_a",
+      "order_id": "ord_1006",
+      "vendor_id": "ven_anh_hao",
+      "material": "Bạc 925 cho nhẫn đôi",
+      "cost": 1160000,
+      "gold_karat": "",
+      "weight": 0,
+      "status": "Đã nhận"
+    },
+    {
+      "id": "src_1006_b",
+      "order_id": "ord_1006",
+      "vendor_id": "ven_anh_hoan",
+      "material": "Gia công + khắc 2 nhẫn",
+      "cost": 780000,
+      "gold_karat": "",
+      "weight": 0,
+      "status": "Đã đặt"
+    }
+  ],
+  "payments": [
+    {
+      "id": "pay_1001",
+      "order_id": "ord_1001",
+      "amount": 1850000,
+      "type": "thanh_toan_du",
+      "method": "Chuyển khoản",
+      "paid_at": "2026-04-20T04:30:00.000Z"
+    },
+    {
+      "id": "pay_1002",
+      "order_id": "ord_1002",
+      "amount": 3000000,
+      "type": "coc",
+      "method": "Chuyển khoản",
+      "paid_at": "2026-05-05T03:15:00.000Z"
+    },
+    {
+      "id": "pay_1003",
+      "order_id": "ord_1003",
+      "amount": 2450000,
+      "type": "thanh_toan_du",
+      "method": "Chuyển khoản",
+      "paid_at": "2026-05-12T02:10:00.000Z"
+    },
+    {
+      "id": "pay_1004",
+      "order_id": "ord_1004",
+      "amount": 790000,
+      "type": "coc",
+      "method": "Chuyển khoản",
+      "paid_at": "2026-05-17T06:00:00.000Z"
+    },
+    {
+      "id": "pay_1006",
+      "order_id": "ord_1006",
+      "amount": 1500000,
+      "type": "coc",
+      "method": "Chuyển khoản",
+      "paid_at": "2026-05-26T08:30:00.000Z"
+    }
+  ],
+  "shipments": [
+    {
+      "id": "shp_1001",
+      "order_id": "ord_1001",
+      "carrier": "Viettel Post",
+      "tracking_code": "VTP26042201",
+      "service_code": "VCN",
+      "cod_amount": 0,
+      "weight": 280,
+      "dimensions": "12x10x6",
+      "fee": 34000,
+      "status": "delivered",
+      "status_label": "Đã giao / Hoàn tất",
+      "status_history": [
+        {
+          "status": "pending_pickup",
+          "label": "Đang giao - Chờ lấy hàng",
+          "at": "2026-04-20T08:00:00.000Z"
+        },
+        {
+          "status": "in_transit",
+          "label": "Đang giao - Vận chuyển",
+          "at": "2026-04-21T04:00:00.000Z"
+        },
+        {
+          "status": "delivered",
+          "label": "Đã giao / Hoàn tất",
+          "at": "2026-04-22T09:10:00.000Z"
+        }
+      ],
+      "expected_delivery": "2026-04-23",
+      "label_url": "/api/receipts/ord_1001?lang=vi",
+      "raw_response": {
+        "adapter": "mock-viettelpost"
+      },
+      "created_at": "2026-04-20T08:00:00.000Z"
+    },
+    {
+      "id": "shp_1004",
+      "order_id": "ord_1004",
+      "carrier": "Viettel Post",
+      "tracking_code": "VTP26052804",
+      "service_code": "VCN",
+      "cod_amount": 800000,
+      "weight": 310,
+      "dimensions": "12x10x6",
+      "fee": 41000,
+      "status": "in_transit",
+      "status_label": "Đang giao - Vận chuyển",
+      "status_history": [
+        {
+          "status": "pending_pickup",
+          "label": "Đang giao - Chờ lấy hàng",
+          "at": "2026-05-28T04:20:00.000Z"
+        },
+        {
+          "status": "picked_up",
+          "label": "Đang giao - Đã lấy hàng",
+          "at": "2026-05-28T08:00:00.000Z"
+        },
+        {
+          "status": "in_transit",
+          "label": "Đang giao - Vận chuyển",
+          "at": "2026-05-29T01:00:00.000Z"
+        }
+      ],
+      "expected_delivery": "2026-06-01",
+      "label_url": "/api/receipts/ord_1004?lang=vi",
+      "raw_response": {
+        "adapter": "mock-viettelpost"
+      },
+      "created_at": "2026-05-28T04:20:00.000Z"
+    }
+  ],
+  "expenses": [
+    {
+      "id": "exp_1001",
+      "date": "2026-04-03",
+      "category": "Marketing",
+      "description": "Instagram ads tháng 4",
+      "amount": 3200000,
+      "attachment": ""
+    },
+    {
+      "id": "exp_1002",
+      "date": "2026-04-10",
+      "category": "Thiết bị",
+      "description": "Phụ kiện chụp ảnh sản phẩm",
+      "amount": 1850000,
+      "attachment": ""
+    },
+    {
+      "id": "exp_1003",
+      "date": "2026-05-01",
+      "category": "Lương",
+      "description": "Phụ cấp cộng tác viên tháng 5",
+      "amount": 5200000,
+      "attachment": ""
+    },
+    {
+      "id": "exp_1004",
+      "date": "2026-05-14",
+      "category": "Vận hành",
+      "description": "100 hộp giấy + túi nhung",
+      "amount": 2450000,
+      "attachment": ""
+    },
+    {
+      "id": "exp_1005",
+      "date": "2026-05-21",
+      "category": "Marketing",
+      "description": "KOL review TikTok",
+      "amount": 4300000,
+      "attachment": ""
+    }
+  ],
+  "gold_prices": [
+    {
+      "karat": "10k",
+      "cost": 5260000,
+      "price": 6100000,
+      "effective_date": "2026-05-01"
+    },
+    {
+      "karat": "14k",
+      "cost": 7420000,
+      "price": 8350000,
+      "effective_date": "2026-05-01"
+    },
+    {
+      "karat": "18k",
+      "cost": 9720000,
+      "price": 10600000,
+      "effective_date": "2026-05-01"
+    }
+  ],
+  "users": [
+    {
+      "id": "usr_admin",
+      "name": "Chủ shop",
+      "role": "admin"
+    },
+    {
+      "id": "usr_sale",
+      "name": "Sale",
+      "role": "sale"
+    },
+    {
+      "id": "usr_ops",
+      "name": "Vận hành",
+      "role": "ops"
+    },
+    {
+      "id": "usr_accounting",
+      "name": "Kế toán",
+      "role": "accounting"
+    }
+  ],
+  "audit_logs": [
+    {
+      "id": "log_seed_1004",
+      "action": "sync",
+      "entity": "shipment",
+      "entity_id": "shp_1004",
+      "user": "Vận hành",
+      "changes": {
+        "status": "in_transit"
+      },
+      "created_at": "2026-05-29T01:00:00.000Z"
+    },
+    {
+      "id": "log_seed_1003",
+      "action": "create",
+      "entity": "shipment",
+      "entity_id": "shp_1004",
+      "user": "Vận hành",
+      "changes": {
+        "carrier": "Viettel Post",
+        "tracking_code": "VTP26052804"
+      },
+      "created_at": "2026-05-28T04:20:00.000Z"
+    },
+    {
+      "id": "log_seed_1002",
+      "action": "create",
+      "entity": "payment",
+      "entity_id": "pay_1006",
+      "user": "Kế toán",
+      "changes": {
+        "amount": 1500000,
+        "type": "coc"
+      },
+      "created_at": "2026-05-26T08:30:00.000Z"
+    },
+    {
+      "id": "log_seed_1001",
+      "action": "update",
+      "entity": "order",
+      "entity_id": "ord_1002",
+      "user": "Sale",
+      "changes": {
+        "status": "san_xuat"
+      },
+      "created_at": "2026-05-20T12:05:00.000Z"
+    }
+  ]
+}

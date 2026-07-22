@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trinket Business Manager</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">T</div>
+        <div>
+          <strong>Trinket</strong>
+          <span>Business Manager</span>
+        </div>
+      </div>
+      <nav class="nav" aria-label="Điều hướng chính">
+        <button class="nav-item is-active" data-view="dashboard"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></button>
+        <button class="nav-item" data-view="orders"><i data-lucide="clipboard-list"></i><span>Deal</span></button>
+        <button class="nav-item" data-view="products"><i data-lucide="package-open"></i><span>Sản phẩm</span></button>
+        <button class="nav-item" data-view="customers"><i data-lucide="users"></i><span>Khách hàng</span></button>
+        <button class="nav-item" data-view="vendors"><i data-lucide="gem"></i><span>Nguồn hàng</span></button>
+        <button class="nav-item" data-view="finance"><i data-lucide="banknote"></i><span>Tài chính</span></button>
+        <button class="nav-item" data-view="shipping"><i data-lucide="truck"></i><span>Vận chuyển</span></button>
+        <button class="nav-item" data-view="settings"><i data-lucide="settings"></i><span>Cấu hình</span></button>
+      </nav>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Nội bộ Trinket</p>
+          <h1 id="viewTitle">Dashboard</h1>
+        </div>
+        <div class="top-actions">
+          <label class="search">
+            <i data-lucide="search"></i>
+            <input id="globalSearch" type="search" placeholder="Tìm đơn, khách, SĐT...">
+          </label>
+          <select id="periodFilter" aria-label="Lọc thời gian">
+            <option value="all">Toàn thời gian</option>
+            <option value="2026-05" selected>Tháng 05/2026</option>
+            <option value="2026-04">Tháng 04/2026</option>
+            <option value="2026-Q2">Quý 2/2026</option>
+          </select>
+          <select id="roleFilter" aria-label="Vai trò xem dữ liệu">
+            <option value="admin">Admin / Chủ</option>
+            <option value="sale">Sale</option>
+            <option value="ops">Vận hành / Kho</option>
+            <option value="accounting">Kế toán</option>
+          </select>
+          <button class="primary" id="newOrderBtn"><i data-lucide="plus"></i><span>Tạo deal</span></button>
+        </div>
+      </header>
+
+      <main id="app" class="content" aria-live="polite">
+        <div class="skeleton-page" aria-label="Đang tải dữ liệu">
+          <div class="skeleton-row">
+            <span></span><span></span><span></span><span></span>
+          </div>
+          <div class="skeleton-panel"></div>
+          <div class="skeleton-panel"></div>
+        </div>
+      </main>
+    </section>
+  </div>
+
+  <div id="toastHost" class="toast-host" aria-live="assertive"></div>
+  <div id="modalHost"></div>
+
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

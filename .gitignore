@@ -1,0 +1,14 @@
+node_modules/
+.vercel/
+test-results/
+data/store.json
+server.log
+server.err.log
+*dashboard*.png
+local-*.png
+vercel-*.png
+Trinket_BM_Recommendation.docx
+Trinket_BM_UX_UI_Guideline.docx
+Trinket_BM_Plan_Vong3.docx
+
+.vercel
