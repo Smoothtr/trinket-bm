@@ -10,6 +10,10 @@ service firebase.storage {
       return request.auth.token.role in ['admin', 'sale', 'ops'];
     }
 
+    function productCatalogRoleIsAllowed() {
+      return request.auth.token.role in ['admin', 'ops'];
+    }
+
     function validProductImage() {
       return request.resource.size <= 5 * 1024 * 1024
         && request.resource.contentType.matches('image/(jpeg|png|webp)');
@@ -19,6 +23,12 @@ service firebase.storage {
       allow read: if signedIn();
       allow create, update: if signedIn() && roleIsAllowed() && validProductImage();
       allow delete: if signedIn() && roleIsAllowed();
+    }
+
+    match /product-images/{productId}/{fileName} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && productCatalogRoleIsAllowed() && validProductImage();
+      allow delete: if signedIn() && productCatalogRoleIsAllowed();
     }
 
     match /{allPaths=**} {

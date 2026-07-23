@@ -1340,7 +1340,8 @@ tbody tr:hover .row-actions,
   display: none;
 }
 
-.product-image-preview [data-image-placeholder] {
+.product-image-preview [data-image-placeholder],
+.detail-product-thumbnail [data-image-placeholder] {
   display: grid;
   place-items: center;
   gap: 3px;
@@ -1348,7 +1349,8 @@ tbody tr:hover .row-actions,
   text-align: center;
 }
 
-.product-image-preview [data-image-placeholder] svg {
+.product-image-preview [data-image-placeholder] svg,
+.detail-product-thumbnail [data-image-placeholder] svg {
   width: 20px;
   height: 20px;
 }
@@ -1384,6 +1386,21 @@ tbody tr:hover .row-actions,
 .detail-product-thumbnail {
   width: 48px;
   height: 48px;
+}
+
+.product-thumbnail-empty {
+  cursor: default;
+}
+
+.product-catalog-identity {
+  display: flex;
+  align-items: center;
+  min-width: 210px;
+  gap: 10px;
+}
+
+.product-catalog-identity > span:last-child {
+  min-width: 0;
 }
 
 .product-image-lightbox {

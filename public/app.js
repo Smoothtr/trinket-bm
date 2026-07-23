@@ -5,11 +5,13 @@ const viewTitle = document.querySelector("#viewTitle");
 
 function closeModal() {
   const orderForm = modalHost.querySelector(".order-editor-form");
-  if (orderForm?.dataset.uploading === "true") {
+  const productForm = modalHost.querySelector("#productForm");
+  if (orderForm?.dataset.uploading === "true" || productForm?.dataset.uploading === "true") {
     toast("Đang tải ảnh lên, vui lòng chờ hoàn tất");
     return;
   }
   cleanupOrderImagePreviews(orderForm);
+  cleanupCatalogProductImagePreview(productForm);
   modalHost.innerHTML = "";
 }
 
@@ -1520,6 +1522,19 @@ function productStockTag(product) {
   return `<span class="tag stock-ok">Còn hàng</span>`;
 }
 
+function catalogProductThumbnail(product) {
+  const image = parseItemImage(product.image);
+  if (!image) {
+    return `<span class="detail-product-thumbnail product-thumbnail-empty" aria-label="Sản phẩm chưa có ảnh"><i data-lucide="image"></i></span>`;
+  }
+  return `
+    <button class="detail-product-thumbnail" type="button" data-action="open-product-image" disabled aria-label="Xem ảnh ${esc(product.name)}">
+      <img data-storage-image="${esc(image.storage_path)}" alt="${esc(image.original_name || product.name)}">
+      <span data-image-placeholder><i data-lucide="image"></i></span>
+    </button>
+  `;
+}
+
 function renderProductCatalog() {
   const needle = state.search.trim().toLowerCase();
   const products = (state.data.products || []).filter((product) => !needle || [product.sku, product.name, product.type, product.note].join(" ").toLowerCase().includes(needle));
@@ -1538,7 +1553,7 @@ function renderProductCatalog() {
             const material = (state.data.settings?.material_catalog || []).find((item) => item.id === product.material_id);
             return `<tr>
               <td class="select-col">${rowSelect("products", product.id, product.name)}</td>
-              <td><strong>${esc(product.name)}</strong><br><span class="small muted">${esc(product.sku)}</span></td>
+              <td><div class="product-catalog-identity">${catalogProductThumbnail(product)}<span><strong>${esc(product.name)}</strong><br><span class="small muted">${esc(product.sku)}</span></span></div></td>
               <td>${esc(product.type)}<br><span class="small muted">${esc(material?.name || "Chưa gán chất liệu")}</span></td>
               <td class="money">${fmtMoney(product.default_price)}</td>
               <td class="money">${canSeeCosts() ? fmtMoney(product.default_cost) : "Ẩn"}</td>
@@ -1659,6 +1674,7 @@ function render() {
     settings: renderSettings,
   };
   app.innerHTML = renderers[state.view]();
+  hydrateProductImages(app);
   refreshIcons();
 }
 
@@ -1754,6 +1770,30 @@ function orderItemImageEditor(image) {
             <input data-field="product_image_file" type="file" accept="image/jpeg,image/png,image/webp" hidden>
             <button class="button" type="button" data-action="choose-order-image"><i data-lucide="upload"></i><span>${hasImage ? "Thay ảnh" : "Tải ảnh lên"}</span></button>
             <button class="ghost danger-link" type="button" data-action="remove-order-image" ${hasImage ? "" : "hidden"}><i data-lucide="trash-2"></i><span>Xóa ảnh</span></button>
+          </div>
+          <span class="small muted" data-image-status>${hasImage ? `${esc(storedImage.original_name || "Ảnh sản phẩm")} · ${imageSizeLabel(storedImage.size)}` : "JPG, PNG hoặc WEBP · tối đa 5 MB"}</span>
+          <progress data-image-progress max="100" value="0" hidden></progress>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function catalogProductImageEditor(image) {
+  const storedImage = parseItemImage(image);
+  const hasImage = Boolean(storedImage);
+  return `
+    <div class="field full product-image-field">
+      <label>Hình ảnh sản phẩm</label>
+      <div class="product-image-editor ${hasImage ? "has-image" : ""}" data-image-editor>
+        <button class="product-image-preview" type="button" data-action="open-product-image" ${hasImage ? "" : "disabled"} aria-label="Xem ảnh sản phẩm">
+          ${hasImage ? `<img data-storage-image="${esc(storedImage.storage_path)}" alt="${esc(storedImage.original_name || "Ảnh sản phẩm")}"><span data-image-placeholder>Đang tải ảnh...</span>` : `<span data-image-placeholder><i data-lucide="image-plus"></i><small>Chưa có ảnh</small></span>`}
+        </button>
+        <div class="product-image-meta">
+          <div class="product-image-actions">
+            <input data-field="catalog_product_image_file" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+            <button class="button" type="button" data-action="choose-catalog-product-image"><i data-lucide="upload"></i><span>${hasImage ? "Thay ảnh" : "Tải ảnh lên"}</span></button>
+            <button class="ghost danger-link" type="button" data-action="remove-catalog-product-image" ${hasImage ? "" : "hidden"}><i data-lucide="trash-2"></i><span>Xóa ảnh</span></button>
           </div>
           <span class="small muted" data-image-status>${hasImage ? `${esc(storedImage.original_name || "Ảnh sản phẩm")} · ${imageSizeLabel(storedImage.size)}` : "JPG, PNG hoặc WEBP · tối đa 5 MB"}</span>
           <progress data-image-progress max="100" value="0" hidden></progress>
@@ -2110,12 +2150,18 @@ function cleanupOrderImagePreviews(form) {
   });
 }
 
+function cleanupCatalogProductImagePreview(form) {
+  if (!form) return;
+  if (form._pendingPreviewUrl) URL.revokeObjectURL(form._pendingPreviewUrl);
+  form._pendingPreviewUrl = "";
+}
+
 function renderOrderImagePreview(row, { url = "", name = "", size = 0, status = "" } = {}) {
   const editor = row?.querySelector("[data-image-editor]");
   const preview = editor?.querySelector("[data-action='open-product-image']");
   const statusNode = editor?.querySelector("[data-image-status]");
-  const chooseLabel = editor?.querySelector("[data-action='choose-order-image'] span");
-  const removeButton = editor?.querySelector("[data-action='remove-order-image']");
+  const chooseLabel = editor?.querySelector("[data-action='choose-order-image'] span, [data-action='choose-catalog-product-image'] span");
+  const removeButton = editor?.querySelector("[data-action='remove-order-image'], [data-action='remove-catalog-product-image']");
   if (!editor || !preview) return;
   if (url) {
     preview.innerHTML = "";
@@ -2211,6 +2257,32 @@ function removeOrderItemImage(row) {
   renderOrderImagePreview(row, { status: storedImage ? "Ảnh sẽ được xóa sau khi lưu deal" : "JPG, PNG hoặc WEBP · tối đa 5 MB" });
 }
 
+function selectCatalogProductImage(input) {
+  const form = input.closest("#productForm");
+  const file = input.files?.[0];
+  validateOrderImageFile(file);
+  if (form._pendingPreviewUrl) URL.revokeObjectURL(form._pendingPreviewUrl);
+  form._pendingImageFile = file;
+  form._pendingPreviewUrl = URL.createObjectURL(file);
+  form.dataset.imageRemoved = "false";
+  renderOrderImagePreview(form, {
+    url: form._pendingPreviewUrl,
+    name: file.name,
+    size: file.size,
+    status: `${file.name} · ${imageSizeLabel(file.size)} · sẵn sàng tải lên`,
+  });
+}
+
+function removeCatalogProductImage(form) {
+  const storedImage = parseItemImage(form?.dataset.image);
+  cleanupCatalogProductImagePreview(form);
+  form._pendingImageFile = null;
+  const fileInput = form?.querySelector('[data-field="catalog_product_image_file"]');
+  if (fileInput) fileInput.value = "";
+  form.dataset.imageRemoved = storedImage ? "true" : "false";
+  renderOrderImagePreview(form, { status: storedImage ? "Ảnh sẽ được xóa sau khi lưu sản phẩm" : "JPG, PNG hoặc WEBP · tối đa 5 MB" });
+}
+
 function setOrderUploadState(form, uploading) {
   form.dataset.uploading = uploading ? "true" : "false";
   form.querySelectorAll("button, input, select, textarea").forEach((control) => {
@@ -2227,6 +2299,25 @@ function setOrderUploadState(form, uploading) {
     const label = button.querySelector("span");
     if (label) label.textContent = uploading ? "Đang tải ảnh..." : "Lưu deal";
   });
+}
+
+function setCatalogProductUploadState(form, uploading) {
+  form.dataset.uploading = uploading ? "true" : "false";
+  form.querySelectorAll("button, input, select, textarea").forEach((control) => {
+    if (uploading) {
+      control.dataset.uploadWasDisabled = control.disabled ? "true" : "false";
+      control.disabled = true;
+    } else if (Object.prototype.hasOwnProperty.call(control.dataset, "uploadWasDisabled")) {
+      control.disabled = control.dataset.uploadWasDisabled === "true";
+      delete control.dataset.uploadWasDisabled;
+    }
+  });
+  const saveButton = modalHost.querySelector('[data-action="save-product"]');
+  if (saveButton) {
+    saveButton.disabled = uploading;
+    const label = saveButton.querySelector("span");
+    if (label) label.textContent = uploading ? "Đang tải ảnh..." : "Lưu mẫu";
+  }
 }
 
 function imageExtension(contentType) {
@@ -2278,6 +2369,34 @@ async function uploadPendingOrderImages(form) {
     return { overrides, uploaded };
   } catch (error) {
     await deleteStoredImages(uploaded, { quiet: true });
+    throw new Error(`Tải ảnh thất bại: ${error.message || "Không xác định"}`);
+  }
+}
+
+async function uploadPendingCatalogProductImage(form, productId) {
+  const file = form._pendingImageFile;
+  if (!file) return null;
+  validateOrderImageFile(file);
+  const filename = `${Date.now()}-${createClientId("img").slice(4)}.${imageExtension(file.type)}`;
+  const path = `product-images/${productId}/${filename}`;
+  const progress = form.querySelector("[data-image-progress]");
+  const status = form.querySelector("[data-image-status]");
+  if (progress) {
+    progress.hidden = false;
+    progress.value = 0;
+  }
+  try {
+    const metadata = await window.TrinketFirebase.uploadProductImage(file, path, (percent) => {
+      if (progress) progress.value = percent;
+      if (status) status.textContent = `Đang tải ${file.name}: ${percent}%`;
+    });
+    if (progress) {
+      progress.value = 100;
+      progress.hidden = true;
+    }
+    if (status) status.textContent = `${file.name} · đã tải lên`;
+    return { ...metadata, uploaded_at: new Date().toISOString() };
+  } catch (error) {
     throw new Error(`Tải ảnh thất bại: ${error.message || "Không xác định"}`);
   }
 }
@@ -3033,15 +3152,17 @@ async function deleteMaterial(materialId) {
 }
 
 function openProductEditor(productId = "") {
-  const product = state.data.products.find((item) => item.id === productId) || { sku: "", name: "", type: "Ring", material_id: "", default_size: "", default_stone: "", default_price: 0, default_cost: 0, status: "active", track_inventory: false, low_stock_threshold: 1, note: "" };
+  const product = state.data.products.find((item) => item.id === productId) || { sku: "", name: "", type: "Ring", material_id: "", default_size: "", default_stone: "", default_price: 0, default_cost: 0, status: "active", track_inventory: false, low_stock_threshold: 1, note: "", image: null };
   const editing = Boolean(productId);
+  const editorProductId = productId || createClientId("prd");
+  const productImage = parseItemImage(product.image);
   modalHost.innerHTML = `
     <div class="modal-backdrop" data-action="close-modal">
       <section class="modal modal-narrow" role="dialog" aria-modal="true" aria-label="${editing ? "Sửa" : "Thêm"} mẫu sản phẩm">
         <div class="modal-header"><div><h2>${editing ? "Sửa" : "Thêm"} sản phẩm có sẵn</h2><p class="small muted">Thông tin này sẽ được sao chép vào Deal khi Sale chọn sản phẩm.</p></div><button class="ghost" data-action="close-modal" aria-label="Đóng"><i data-lucide="x"></i></button></div>
         <div class="modal-body">
-          <form id="productForm" class="form-grid">
-            <input type="hidden" name="id" value="${esc(productId)}">
+          <form id="productForm" class="form-grid" data-editing="${editing ? "true" : "false"}" data-image="${esc(productImage ? JSON.stringify(productImage) : "")}" data-image-removed="false">
+            <input type="hidden" name="id" value="${esc(editorProductId)}">
             <div class="field"><label>SKU / mã sản phẩm</label><input name="sku" value="${esc(product.sku)}" required placeholder="TR-RING-001"></div>
             <div class="field"><label>Loại</label><select name="type">${optionTags(state.data.meta.product_types, product.type)}</select></div>
             <div class="field full"><label>Tên sản phẩm</label><input name="name" value="${esc(product.name)}" required placeholder="Nhẫn twist 4 chấu"></div>
@@ -3051,6 +3172,7 @@ function openProductEditor(productId = "") {
             <div class="field"><label>Đá / charm mặc định</label><input name="default_stone" value="${esc(product.default_stone || "")}" placeholder="Zircon trắng..."></div>
             <div class="field"><label>Giá bán mặc định</label><input name="default_price" type="number" min="0" step="1000" value="${Number(product.default_price || 0)}"></div>
             <div class="field"><label>Giá vốn mặc định</label><input name="default_cost" type="number" min="0" step="1000" value="${Number(product.default_cost || 0)}"></div>
+            ${catalogProductImageEditor(productImage)}
             <div class="field full inventory-toggle"><label class="check-control"><input name="track_inventory" type="checkbox" ${product.track_inventory ? "checked" : ""}><span>Theo dõi tồn kho cho sản phẩm này</span></label></div>
             ${editing ? `<div class="field"><label>Tồn hiện tại</label><output class="field-output">${fmtNumber(product.on_hand)} sản phẩm</output></div>` : `<div class="field"><label>Tồn đầu kỳ</label><input name="initial_stock" type="number" min="0" step="1" value="0"></div>`}
             <div class="field"><label>Cảnh báo khi tồn còn</label><input name="low_stock_threshold" type="number" min="0" step="1" value="${Number(product.low_stock_threshold || 0)}"></div>
@@ -3061,15 +3183,22 @@ function openProductEditor(productId = "") {
       </section>
     </div>
   `;
+  hydrateProductImages(modalHost);
   refreshIcons();
 }
 
 async function saveProductFromForm() {
   const form = document.querySelector("#productForm");
   if (!form?.reportValidity()) return;
+  if (form.dataset.uploading === "true") return;
   const data = new FormData(form);
   const productId = data.get("id");
+  const editing = form.dataset.editing === "true";
+  const storedImage = parseItemImage(form.dataset.image);
+  let uploadedImage = null;
+  let productPersisted = false;
   const body = {
+    id: productId,
     sku: data.get("sku"),
     type: data.get("type"),
     name: data.get("name"),
@@ -3084,17 +3213,37 @@ async function saveProductFromForm() {
     initial_stock: Number(data.get("initial_stock") || 0),
     note: data.get("note"),
   };
-  await api(productId ? `/api/products/${productId}` : "/api/products", { method: productId ? "PATCH" : "POST", body });
-  closeModal();
-  await loadData();
-  toast(productId ? "Đã cập nhật mẫu sản phẩm" : "Đã thêm mẫu sản phẩm");
-  render();
+  setCatalogProductUploadState(form, true);
+  try {
+    uploadedImage = await uploadPendingCatalogProductImage(form, productId);
+    body.image = uploadedImage || (form.dataset.imageRemoved === "true" ? null : storedImage);
+    await api(editing ? `/api/products/${productId}` : "/api/products", { method: editing ? "PATCH" : "POST", body });
+    productPersisted = true;
+    if (storedImage && (uploadedImage || form.dataset.imageRemoved === "true")) {
+      const cleaned = await deleteStoredImages([storedImage], { quiet: true });
+      if (!cleaned) toast("Đã lưu sản phẩm nhưng chưa xóa được ảnh cũ");
+    }
+    setCatalogProductUploadState(form, false);
+    closeModal();
+    await loadData();
+    toast(editing ? "Đã cập nhật mẫu sản phẩm" : "Đã thêm mẫu sản phẩm");
+    render();
+  } catch (error) {
+    if (!productPersisted && uploadedImage) await deleteStoredImages([uploadedImage], { quiet: true });
+    throw error;
+  } finally {
+    if (form.isConnected) setCatalogProductUploadState(form, false);
+  }
 }
 
 async function deleteProduct(productId) {
   const product = state.data.products.find((item) => item.id === productId);
   if (!product || !window.confirm(`${product.order_count ? "Ngừng bán" : "Xóa"} sản phẩm ${product.name}? Deal cũ luôn giữ snapshot đã bán.`)) return;
   const result = await api(`/api/products/${productId}`, { method: "DELETE" });
+  if (!result.archived && product.image) {
+    const cleaned = await deleteStoredImages([parseItemImage(product.image)], { quiet: true });
+    if (!cleaned) toast("Đã xóa sản phẩm nhưng chưa xóa được ảnh trên Storage");
+  }
   await loadData();
   toast(result.archived ? "Sản phẩm đã được chuyển sang ngừng bán" : "Đã xóa sản phẩm");
   render();
@@ -3878,6 +4027,14 @@ function bindShell() {
       if (event.target.matches('[data-field="product_id"]')) syncProductRowFromCatalog(event.target.closest(".product-item-row"));
       refreshOrderPricing(form);
     }
+    if (event.target.matches('[data-field="catalog_product_image_file"]')) {
+      try {
+        selectCatalogProductImage(event.target);
+      } catch (error) {
+        event.target.value = "";
+        toast(error.message);
+      }
+    }
     if (event.target.closest(".metal-rule-row")) syncMetalRuleRow(event.target.closest(".metal-rule-row"));
   });
 
@@ -3966,6 +4123,8 @@ function bindShell() {
       if (action === "remove-order-item") removeOrderItemRow(actionTarget);
       if (action === "choose-order-image") actionTarget.closest(".product-item-row")?.querySelector('[data-field="product_image_file"]')?.click();
       if (action === "remove-order-image") removeOrderItemImage(actionTarget.closest(".product-item-row"));
+      if (action === "choose-catalog-product-image") actionTarget.closest("#productForm")?.querySelector('[data-field="catalog_product_image_file"]')?.click();
+      if (action === "remove-catalog-product-image") removeCatalogProductImage(actionTarget.closest("#productForm"));
       if (action === "open-product-image") openProductImageLightbox(actionTarget.dataset.imageUrl, actionTarget.dataset.imageName);
       if (action === "close-product-image") {
         if (actionTarget.classList.contains("product-image-lightbox") && event.target !== actionTarget) return;

@@ -197,6 +197,24 @@ function normalizeOrderItemImage(image, orderId, itemId) {
   };
 }
 
+function normalizeCatalogProductImage(image, productId) {
+  if (!image || typeof image !== "object") return null;
+  const storagePath = String(image.storage_path || "").trim();
+  const contentType = String(image.content_type || "").toLowerCase();
+  const size = Math.max(0, Number(image.size || 0));
+  const expectedPrefix = `product-images/${productId}/`;
+  const fileName = storagePath.slice(expectedPrefix.length);
+  if (!storagePath.startsWith(expectedPrefix) || storagePath.includes("..") || !fileName || fileName.includes("/")) return null;
+  if (!ORDER_IMAGE_TYPES.has(contentType) || !Number.isFinite(size) || size <= 0 || size > MAX_ORDER_IMAGE_SIZE) return null;
+  return {
+    storage_path: storagePath,
+    original_name: String(image.original_name || "image").slice(0, 255),
+    content_type: contentType,
+    size,
+    uploaded_at: image.uploaded_at || new Date().toISOString(),
+  };
+}
+
 function prepareIncomingOrderItems(items, orderId) {
   const seen = new Set();
   return items.map((item) => {
@@ -229,6 +247,7 @@ function normalizeProduct(product, index = 0) {
     track_inventory: Boolean(product?.track_inventory),
     low_stock_threshold: Math.max(0, Number(product?.low_stock_threshold || 0)),
     note: product?.note || "",
+    image: normalizeCatalogProductImage(product?.image, productId),
   };
 }
 
@@ -1278,8 +1297,14 @@ async function routeApi(req, res, pathname, searchParams) {
     if (data.products.some((product) => String(product.sku).toLowerCase() === sku.toLowerCase())) {
       return json(res, 409, { error: "Mã mẫu đã tồn tại" });
     }
+    const productId = validClientId(body.id, "prd") ? body.id : id("prd");
+    if (data.products.some((product) => product.id === productId)) {
+      return json(res, 409, { error: "Product ID already exists" });
+    }
+    const productImage = normalizeCatalogProductImage(body.image, productId);
+    if (body.image && !productImage) return json(res, 400, { error: "Invalid catalog product image metadata" });
     const product = normalizeProduct({
-      id: id("prd"),
+      id: productId,
       sku,
       type: body.type,
       name: body.name,
@@ -1292,7 +1317,7 @@ async function routeApi(req, res, pathname, searchParams) {
       track_inventory: body.track_inventory,
       low_stock_threshold: body.low_stock_threshold,
       note: body.note,
-      image: body.image || "",
+      image: productImage,
     });
     data.products.push(product);
     const initialStock = Math.max(0, Number(body.initial_stock || 0));
@@ -1326,9 +1351,14 @@ async function routeApi(req, res, pathname, searchParams) {
       return json(res, 409, { error: "Mã mẫu đã tồn tại" });
     }
     const before = { ...product };
-    ["type", "name", "note", "image", "material_id", "default_size", "default_stone", "status"].forEach((field) => {
+    ["type", "name", "note", "material_id", "default_size", "default_stone", "status"].forEach((field) => {
       if (Object.prototype.hasOwnProperty.call(body, field)) product[field] = body[field] || "";
     });
+    if (Object.prototype.hasOwnProperty.call(body, "image")) {
+      const productImage = normalizeCatalogProductImage(body.image, product.id);
+      if (body.image && !productImage) return json(res, 400, { error: "Invalid catalog product image metadata" });
+      product.image = productImage;
+    }
     product.sku = sku;
     if (Object.prototype.hasOwnProperty.call(body, "default_price")) product.default_price = money(body.default_price);
     if (Object.prototype.hasOwnProperty.call(body, "default_cost")) product.default_cost = money(body.default_cost);

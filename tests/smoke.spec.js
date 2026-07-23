@@ -93,6 +93,15 @@ test("core screens, recommendation fixes, and modals render without client error
   await expect(page.locator("[data-action='adjust-stock']").first()).toBeVisible();
   await page.locator("[data-action='edit-product']").first().click();
   await expect(page.locator("#productForm")).toBeVisible();
+  await expect(page.locator("#productForm [data-field='catalog_product_image_file']")).toHaveAttribute("accept", "image/jpeg,image/png,image/webp");
+  await page.locator("#productForm [data-field='catalog_product_image_file']").setInputFiles({
+    name: "catalog-product.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("catalog-product-image"),
+  });
+  await expect(page.locator("#productForm .product-image-preview img")).toHaveAttribute("src", /^blob:/);
+  await page.locator("#productForm [data-action='remove-catalog-product-image']").click();
+  await expect(page.locator("#productForm [data-action='remove-catalog-product-image']")).toBeHidden();
   await page.locator("[aria-label='Đóng']").click();
   await page.locator("[data-action='set-product-tab'][data-tab='attributes']").click();
   await expect(page.getByText("Thuộc tính sản phẩm")).toBeVisible();

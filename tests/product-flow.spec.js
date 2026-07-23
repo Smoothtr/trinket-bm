@@ -3,6 +3,7 @@ const { test, expect } = require("@playwright/test");
 test("ready-made and custom deal flows preserve cost snapshots and inventory", async ({ request }) => {
   const baseUrl = process.env.BASE_URL || "http://localhost:4173";
   const suffix = `${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
+  const requestedProductId = `prd_${suffix}`;
   let productId = "";
   const orderIds = [];
 
@@ -38,9 +39,26 @@ test("ready-made and custom deal flows preserve cost snapshots and inventory", a
     });
     expect(invalidImageResponse.status()).toBe(400);
 
+    const invalidCatalogImageResponse = await call("/api/products", {
+      method: "POST",
+      data: {
+        id: requestedProductId,
+        sku: `PW-BAD-${suffix}`,
+        name: "Invalid catalog image path",
+        image: {
+          storage_path: `deal-items/${requestedProductId}/cover.webp`,
+          original_name: "cover.webp",
+          content_type: "image/webp",
+          size: 2048,
+        },
+      },
+    });
+    expect(invalidCatalogImageResponse.status()).toBe(400);
+
     const productResponse = await call("/api/products", {
       method: "POST",
       data: {
+        id: requestedProductId,
         sku: `PW-${suffix}`,
         name: "Playwright ready-made product",
         type: "Ring",
@@ -50,13 +68,28 @@ test("ready-made and custom deal flows preserve cost snapshots and inventory", a
         track_inventory: true,
         low_stock_threshold: 1,
         initial_stock: 5,
+        image: {
+          storage_path: `product-images/${requestedProductId}/cover.webp`,
+          original_name: "cover.webp",
+          content_type: "image/webp",
+          size: 2048,
+        },
       },
     });
     expect(productResponse.status()).toBe(201);
     const product = await productResponse.json();
     productId = product.id;
+    expect(product.id).toBe(requestedProductId);
+    expect(product.image.storage_path).toBe(`product-images/${requestedProductId}/cover.webp`);
     expect(product.on_hand).toBe(5);
     expect(product.available).toBe(5);
+
+    const removedCatalogImageResponse = await call(`/api/products/${productId}`, {
+      method: "PATCH",
+      data: { image: null },
+    });
+    expect(removedCatalogImageResponse.ok()).toBeTruthy();
+    expect((await removedCatalogImageResponse.json()).image).toBeNull();
 
     const readyOrderResponse = await call("/api/orders", {
       method: "POST",
