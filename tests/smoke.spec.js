@@ -202,7 +202,8 @@ test("login screen fully covers the app on desktop and mobile", async ({ page })
     await expect(page.locator(".auth-screen")).toBeVisible();
     await expect(page.locator(".auth-brand-lockup")).toBeVisible();
     await expect(page.locator("#authLoginForm")).toBeVisible();
-    await expect(page.locator(".auth-form-panel")).toContainText("Gg1234");
+    await expect(page.locator(".auth-form-panel")).toContainText("mật khẩu mặc định do Admin / Chủ cung cấp");
+    await expect(page.locator(".auth-form-panel")).not.toContainText("Gg1234");
     await expect(page.locator("[data-action='reset-auth-password']")).toHaveCount(0);
     const coverage = await page.locator(".auth-backdrop").evaluate((backdrop) => {
       const rect = backdrop.getBoundingClientRect();

@@ -352,7 +352,7 @@ function showLogin(message = "") {
           <div class="auth-actions">
             <button class="primary auth-submit" type="submit" form="authLoginForm"><i data-lucide="log-in"></i><span>Đăng nhập</span></button>
           </div>
-          <p class="auth-help">Tài khoản mới hoặc vừa được Admin reset sử dụng mật khẩu mặc định <strong>${DEFAULT_ACCOUNT_PASSWORD}</strong>. Nếu quên mật khẩu, vui lòng liên hệ Admin / Chủ.</p>
+          <p class="auth-help">Tài khoản mới hoặc vừa được reset sử dụng mật khẩu mặc định do Admin / Chủ cung cấp. Nếu quên mật khẩu, vui lòng liên hệ Admin / Chủ.</p>
         </div>
       </section>
     </div>
