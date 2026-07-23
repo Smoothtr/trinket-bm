@@ -1,4 +1,4 @@
-import { sendFirebasePasswordResetEmail } from "../lib/account-admin.mjs";
+import { createBootstrapPassword, sendFirebasePasswordResetEmail } from "../lib/account-admin.mjs";
 import { ROLES } from "../lib/auth.mjs";
 import { getFirebaseServices } from "../lib/firebase-admin.mjs";
 
@@ -22,7 +22,13 @@ async function main() {
     user = await auth.getUserByEmail(email);
   } catch (error) {
     if (error.code !== "auth/user-not-found") throw error;
-    user = await auth.createUser({ email, displayName: name, emailVerified: false, disabled: false });
+    user = await auth.createUser({
+      email,
+      displayName: name,
+      emailVerified: false,
+      password: createBootstrapPassword(),
+      disabled: false,
+    });
     created = true;
   }
 
@@ -41,7 +47,7 @@ async function main() {
     created_by: "firebase:create-user",
     updated_at: now,
     invitation_status: "pending",
-    ...(created ? { created_at: now } : {}),
+    ...(created ? { created_at: now, password_credential_created: true } : {}),
   }, { merge: true });
 
   let passwordEmailSent = false;

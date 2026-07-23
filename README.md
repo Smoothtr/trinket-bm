@@ -125,7 +125,7 @@ Vai trò:
 - `ops`: sản phẩm, tồn kho, nguồn hàng, giao vận; trong deal chỉ đổi trạng thái và phí giao.
 - `accounting`: chi phí và thanh toán; được xem dữ liệu tài chính.
 
-Script không tạo hoặc in mật khẩu tạm. Sau khi tạo/gán role, script gửi email đặt mật khẩu bằng template của Firebase. Nếu gửi email thất bại, kết quả trả về `passwordEmailSent: false` và có cảnh báo thật; có thể gửi lại từ giao diện Quản lý tài khoản.
+Hệ thống không có mật khẩu mặc định dùng chung và không in mật khẩu tạm. Backend tạo một credential khởi tạo ngẫu nhiên chỉ để Firebase có thể phát email đặt mật khẩu; giá trị này không được trả về frontend, lưu vào hồ sơ hay ghi Audit log. Sau khi tạo/gán role, hệ thống gửi email đặt mật khẩu bằng template của Firebase. Nếu gửi email thất bại, kết quả trả về `passwordEmailSent: false` và có cảnh báo thật; có thể gửi lại từ giao diện Quản lý tài khoản.
 
 ## Giá vốn và ảnh sản phẩm trong deal
 

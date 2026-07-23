@@ -137,7 +137,7 @@ test("payload tạo tài khoản chuẩn hóa email và chỉ nhận bốn role 
   }), (error) => error.statusCode === 400);
 });
 
-test("Admin tạo tài khoản Sale không tạo hay trả mật khẩu và ghi đủ audit", async () => {
+test("Admin tạo tài khoản Sale bằng mật khẩu khởi tạo ngẫu nhiên nhưng không trả hoặc ghi mật khẩu", async () => {
   const auth = new FakeAuth([firebaseUser("admin-1", "owner@example.com", "admin")]);
   const data = state();
   const emails = [];
@@ -154,13 +154,16 @@ test("Admin tạo tài khoản Sale không tạo hay trả mật khẩu và ghi 
   assert.equal(result.user.role, "sale");
   assert.equal(result.user.email, "sale@example.com");
   assert.equal(Object.hasOwn(result.user, "password"), false);
-  assert.equal(Object.hasOwn(auth.createdPayloads[0], "password"), false);
+  assert.equal(typeof auth.createdPayloads[0].password, "string");
+  assert.ok(auth.createdPayloads[0].password.length >= 32);
   assert.deepEqual(auth.users.get(result.user.uid).customClaims, { role: "sale" });
   assert.deepEqual(emails, ["sale@example.com"]);
   assert.equal(data.users[0].status, "active");
   assert.equal(data.users[0].invitation_status, "sent");
+  assert.equal(data.users[0].password_credential_created, true);
   assert.deepEqual(data.audit_logs.map((log) => log.action), ["user.password_link_sent", "user.create"]);
   assert.equal(data.audit_logs.some((log) => Object.keys(log.changes).some((key) => /password|token/i.test(key))), false);
+  assert.equal(JSON.stringify(result).includes(auth.createdPayloads[0].password), false);
 });
 
 test("Admin tạo thành công tài khoản Vận hành/Kho và Kế toán", async () => {
@@ -299,4 +302,32 @@ test("email đặt mật khẩu dùng Firebase sendOobCode và không trả link
   assert.equal(request.options.headers["X-Firebase-Locale"], "vi");
   assert.deepEqual(result, { email: "sale@example.com" });
   assert.equal(Object.hasOwn(result, "link"), false);
+});
+
+test("gửi lại email sẽ sửa an toàn tài khoản mời cũ chưa có credential mật khẩu", async () => {
+  const auth = new FakeAuth([
+    firebaseUser("admin-1", "owner@example.com", "admin"),
+    firebaseUser("legacy-invite", "legacy@example.com", "sale"),
+  ]);
+  const data = state([{
+    uid: "legacy-invite",
+    firebaseUid: "legacy-invite",
+    email: "legacy@example.com",
+    display_name: "Legacy Invite",
+    role: "sale",
+    status: "active",
+    invitation_status: "sent",
+  }]);
+  const emails = [];
+
+  const result = await manager(auth, {
+    sendPasswordEmail: async (email) => emails.push(email),
+  }).sendPasswordLink(data, actor(), "legacy-invite");
+
+  assert.deepEqual(result, { ok: true });
+  assert.equal(typeof auth.users.get("legacy-invite").password, "string");
+  assert.ok(auth.users.get("legacy-invite").password.length >= 32);
+  assert.equal(data.users[0].password_credential_created, true);
+  assert.deepEqual(emails, ["legacy@example.com"]);
+  assert.equal(JSON.stringify(data.audit_logs).includes(auth.users.get("legacy-invite").password), false);
 });
