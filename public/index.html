@@ -9,8 +9,12 @@
       const hasSessionHint = localStorage.getItem("trinket.auth.session") === "1"
         || Object.keys(localStorage).some((key) => key.startsWith("firebase:authUser:") && localStorage.getItem(key));
       if (hasSessionHint) document.documentElement.classList.add("auth-session-pending");
+      const savedUi = JSON.parse(sessionStorage.getItem("trinket.ui.state") || "{}");
+      const allowedViews = ["dashboard", "orders", "products", "customers", "vendors", "finance", "shipping", "settings"];
+      document.documentElement.dataset.initialView = allowedViews.includes(savedUi.view) ? savedUi.view : "dashboard";
     } catch (error) {
       // Firebase will determine the real session after the page finishes loading.
+      document.documentElement.dataset.initialView = "dashboard";
     }
   </script>
   <link rel="stylesheet" href="/styles.css">
@@ -76,6 +80,28 @@
     </section>
   </div>
 
+  <script>
+    try {
+      const initialView = document.documentElement.dataset.initialView || "dashboard";
+      const initialTitles = {
+        dashboard: "Dashboard",
+        orders: "Deal",
+        products: "Sản phẩm",
+        customers: "Khách hàng",
+        vendors: "Nguồn hàng",
+        finance: "Tài chính",
+        shipping: "Vận chuyển",
+        settings: "Cấu hình",
+      };
+      document.querySelectorAll(".nav-item").forEach((item) => {
+        item.classList.toggle("is-active", item.dataset.view === initialView);
+      });
+      document.querySelector("#viewTitle").textContent = initialTitles[initialView] || "Dashboard";
+    } catch (error) {
+      // app.js will render the authoritative navigation state.
+    }
+  </script>
+
   <div id="toastHost" class="toast-host" aria-live="assertive"></div>
   <div id="modalHost">
     <div class="modal-backdrop auth-backdrop">
@@ -108,12 +134,6 @@
               <button class="auth-forgot" type="button" data-action="open-login-password-change"><i data-lucide="key-round"></i><span>Đổi mật khẩu</span></button>
             </div>
             <p class="auth-help">Tài khoản mới hoặc vừa được reset sử dụng mật khẩu mặc định do Admin / Chủ cung cấp. Nếu quên mật khẩu, vui lòng liên hệ Admin / Chủ.</p>
-          </div>
-          <div class="auth-session-loader" role="status" aria-live="polite">
-            <span class="auth-loading-spinner" aria-hidden="true"></span>
-            <p class="eyebrow">Phiên làm việc</p>
-            <h2>Đang mở ứng dụng</h2>
-            <p>Đang khôi phục phiên đăng nhập và tải dữ liệu của bạn…</p>
           </div>
         </div>
       </section>

@@ -5,6 +5,27 @@ const viewTitle = document.querySelector("#viewTitle");
 const appShell = document.querySelector("#appShell");
 const DEFAULT_ACCOUNT_PASSWORD = "Gg1234";
 const AUTH_SESSION_HINT_KEY = "trinket.auth.session";
+const UI_STATE_KEY = "trinket.ui.state";
+const VALID_VIEWS = ["dashboard", "orders", "products", "customers", "vendors", "finance", "shipping", "settings"];
+const VALID_PRODUCT_TABS = ["catalog", "attributes", "movements"];
+const VALID_SETTINGS_TABS = ["permissions", "accounts", "audit"];
+const VALID_ORDER_VIEWS = ["table", "kanban"];
+
+function readUiState() {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(UI_STATE_KEY) || "{}");
+    return {
+      view: VALID_VIEWS.includes(saved.view) ? saved.view : "dashboard",
+      productTab: VALID_PRODUCT_TABS.includes(saved.productTab) ? saved.productTab : "catalog",
+      settingsTab: VALID_SETTINGS_TABS.includes(saved.settingsTab) ? saved.settingsTab : "permissions",
+      orderView: VALID_ORDER_VIEWS.includes(saved.orderView) ? saved.orderView : "table",
+    };
+  } catch (error) {
+    return { view: "dashboard", productTab: "catalog", settingsTab: "permissions", orderView: "table" };
+  }
+}
+
+const initialUiState = readUiState();
 
 function setAuthSessionHint(active) {
   try {
@@ -46,16 +67,16 @@ new MutationObserver(syncModalState).observe(modalHost, { childList: true });
 const state = {
   data: null,
   session: null,
-  view: "dashboard",
+  view: initialUiState.view,
   search: "",
   period: "2026-05",
   role: "admin",
   statusFilter: "all",
   quickFilter: "all",
   orderSort: { key: "date_order", dir: "desc" },
-  orderView: "table",
-  productTab: "catalog",
-  settingsTab: "permissions",
+  orderView: initialUiState.orderView,
+  productTab: initialUiState.productTab,
+  settingsTab: initialUiState.settingsTab,
   accountUsers: null,
   accountUsersLoading: false,
   accountUsersError: "",
@@ -69,6 +90,19 @@ const state = {
     shipments: new Set(),
   },
 };
+
+function persistUiState() {
+  try {
+    sessionStorage.setItem(UI_STATE_KEY, JSON.stringify({
+      view: state.view,
+      productTab: state.productTab,
+      settingsTab: state.settingsTab,
+      orderView: state.orderView,
+    }));
+  } catch (error) {
+    // Navigation still works when session storage is unavailable.
+  }
+}
 
 let goalEditorDraft = null;
 
@@ -1885,7 +1919,10 @@ function renderSettingsAudit() {
 }
 
 function renderSettings() {
-  if (state.role !== "admin" && state.settingsTab === "accounts") state.settingsTab = "permissions";
+  if (state.role !== "admin" && state.settingsTab === "accounts") {
+    state.settingsTab = "permissions";
+    persistUiState();
+  }
   return `
     <div class="stack">
       <section class="settings-tabs" aria-label="Các khu vực cấu hình">
@@ -3121,6 +3158,7 @@ async function saveOrderFromForm() {
     await loadData();
     toast("Đã tạo deal mới");
     state.view = "orders";
+    persistUiState();
     render();
   } catch (error) {
     if (!orderPersisted) await deleteStoredImages(uploadResult.uploaded, { quiet: true });
@@ -4304,6 +4342,7 @@ function bindShell() {
   document.querySelectorAll(".nav-item").forEach((button) => {
     button.addEventListener("click", () => {
       state.view = button.dataset.view;
+      persistUiState();
       render();
     });
   });
@@ -4647,6 +4686,7 @@ function bindShell() {
       if (action === "switch-view") {
         state.view = actionTarget.dataset.view || "dashboard";
         if (actionTarget.dataset.filter === "receivable") state.quickFilter = "receivable";
+        persistUiState();
         render();
       }
       if (action === "filter-status") {
@@ -4654,6 +4694,7 @@ function bindShell() {
         state.statusFilter = actionTarget.dataset.statusId;
         state.quickFilter = "all";
         state.orderView = "table";
+        persistUiState();
         render();
       }
       if (action === "sort-orders") {
@@ -4666,6 +4707,7 @@ function bindShell() {
       }
       if (action === "set-order-view") {
         state.orderView = actionTarget.dataset.mode;
+        persistUiState();
         render();
       }
       if (action === "create-shipment") await createShipment(actionTarget.dataset.orderId);
@@ -4702,12 +4744,14 @@ function bindShell() {
       if (action === "delete-material") await deleteMaterial(actionTarget.dataset.materialId);
       if (action === "set-product-tab") {
         state.productTab = actionTarget.dataset.tab || "catalog";
+        persistUiState();
         render();
       }
       if (action === "set-settings-tab") {
         const tab = actionTarget.dataset.tab || "permissions";
         if (tab === "accounts" && state.role !== "admin") throw new Error("Bạn không có quyền thực hiện thao tác này.");
         state.settingsTab = tab;
+        persistUiState();
         render();
         if (tab === "accounts" && !state.accountUsers) await loadAdminUsers();
       }

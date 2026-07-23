@@ -250,10 +250,18 @@ test("HTML ban đầu hiển thị đăng nhập và không để lộ Dashboard
   await context.close();
 });
 
-test("refresh khi đã có phiên chỉ hiện trạng thái khôi phục, không hiện form đăng nhập", async ({ browser }) => {
+test("refresh khi đã có phiên giữ nguyên trang hiện tại và không hiện màn hình xác thực", async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
-  await page.addInitScript(() => localStorage.setItem("trinket.auth.session", "1"));
+  await page.addInitScript(() => {
+    localStorage.setItem("trinket.auth.session", "1");
+    sessionStorage.setItem("trinket.ui.state", JSON.stringify({
+      view: "products",
+      productTab: "attributes",
+      settingsTab: "permissions",
+      orderView: "table",
+    }));
+  });
   let releaseConfiguration;
   let markConfigurationRequested;
   const configurationRequested = new Promise((resolve) => { markConfigurationRequested = resolve; });
@@ -265,13 +273,17 @@ test("refresh khi đã có phiên chỉ hiện trạng thái khôi phục, khôn
 
   await page.goto(process.env.BASE_URL || "http://localhost:4173", { waitUntil: "domcontentloaded" });
   await configurationRequested;
-  await expect(page.locator(".auth-session-loader")).toBeVisible();
+  await expect(page.locator("#modalHost")).toBeHidden();
   await expect(page.locator("#authLoginForm")).toBeHidden();
-  await expect(page.locator("#appShell")).toBeHidden();
+  await expect(page.locator("#appShell")).toBeVisible();
+  await expect(page.locator("#viewTitle")).toHaveText("Sản phẩm");
+  await expect(page.locator(".nav-item[data-view='products']")).toHaveClass(/is-active/);
 
   releaseConfiguration();
   await expect(page.locator("#appShell")).toBeVisible();
   await expect(page.locator("#authBootScreen")).toHaveCount(0);
+  await expect(page.locator("#viewTitle")).toHaveText("Sản phẩm");
+  await expect(page.locator("[data-action='set-product-tab'][data-tab='attributes']")).toHaveClass(/is-active/);
   await context.close();
 });
 
