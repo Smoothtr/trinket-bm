@@ -50,6 +50,44 @@ test("production configuration requires Firestore", () => {
   Object.entries(previous).forEach(([key, value]) => value === undefined ? delete process.env[key] : process.env[key] = value);
 });
 
+test("Vercel accepts request-scoped OIDC without an environment token", () => {
+  const keys = [
+    "VERCEL",
+    "VERCEL_OIDC_TOKEN",
+    "FIREBASE_AUTH_ENABLED",
+    "DATA_BACKEND",
+    "FIREBASE_WEB_API_KEY",
+    "FIREBASE_AUTH_DOMAIN",
+    "FIREBASE_PROJECT_ID",
+    "FIREBASE_STORAGE_BUCKET",
+    "FIREBASE_WEB_APP_ID",
+    "GCP_PROJECT_NUMBER",
+    "GCP_SERVICE_ACCOUNT_EMAIL",
+    "GCP_WORKLOAD_IDENTITY_POOL_ID",
+    "GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID",
+  ];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  try {
+    process.env.VERCEL = "1";
+    delete process.env.VERCEL_OIDC_TOKEN;
+    process.env.FIREBASE_AUTH_ENABLED = "1";
+    process.env.DATA_BACKEND = "firestore";
+    process.env.FIREBASE_WEB_API_KEY = "test-api-key";
+    process.env.FIREBASE_AUTH_DOMAIN = "test.firebaseapp.com";
+    process.env.FIREBASE_PROJECT_ID = "test-project";
+    process.env.FIREBASE_STORAGE_BUCKET = "test.firebasestorage.app";
+    process.env.FIREBASE_WEB_APP_ID = "1:test:web:test";
+    process.env.GCP_PROJECT_NUMBER = "123456789";
+    process.env.GCP_SERVICE_ACCOUNT_EMAIL = "vercel@test-project.iam.gserviceaccount.com";
+    process.env.GCP_WORKLOAD_IDENTITY_POOL_ID = "vercel";
+    process.env.GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID = "vercel";
+
+    assert.deepEqual(firebaseConfigStatus().missing, []);
+  } finally {
+    Object.entries(previous).forEach(([key, value]) => value === undefined ? delete process.env[key] : process.env[key] = value);
+  }
+});
+
 test("all assigned roles may read bootstrap, but only admin may export raw data", () => {
   for (const role of ["admin", "sale", "ops", "accounting"]) {
     assert.equal(statusCode(() => authorizeApiRequest(request(role), "/api/bootstrap")), 200);

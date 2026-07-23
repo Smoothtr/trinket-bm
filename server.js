@@ -37,7 +37,7 @@ function serverFirebaseConfigStatus() {
     ? Object.entries(config).filter(([, value]) => !value).map(([key]) => key)
     : [];
   const hasVercelOidc = Boolean(
-    process.env.VERCEL_OIDC_TOKEN
+    (process.env.VERCEL === "1" || process.env.VERCEL_OIDC_TOKEN)
       && process.env.GCP_PROJECT_NUMBER
       && process.env.GCP_SERVICE_ACCOUNT_EMAIL
       && process.env.GCP_WORKLOAD_IDENTITY_POOL_ID
