@@ -7,8 +7,6 @@ const {
   assertOrderPatchAllowed,
   authenticateRequest,
   authorizeApiRequest,
-  firebaseConfigStatus,
-  isAuthRequired,
 } = require("./lib/auth");
 const { createStore } = require("./lib/store");
 
@@ -20,6 +18,45 @@ const IS_VERCEL = process.env.VERCEL === "1";
 const STORE_PATH = process.env.TRINKET_STORE_PATH || (IS_VERCEL ? path.join(os.tmpdir(), "trinket-store.json") : path.join(DATA_DIR, "store.json"));
 const SEED_PATH = path.join(DATA_DIR, "seed.json");
 const dataStore = createStore({ seedPath: SEED_PATH, storePath: STORE_PATH });
+
+function serverAuthRequired() {
+  if (process.env.AUTH_DISABLED === "1" && process.env.VERCEL !== "1") return false;
+  return process.env.FIREBASE_AUTH_ENABLED === "1" || process.env.VERCEL === "1";
+}
+
+function serverFirebaseConfigStatus() {
+  const enabled = serverAuthRequired();
+  const config = {
+    apiKey: process.env.FIREBASE_WEB_API_KEY || "",
+    authDomain: process.env.FIREBASE_AUTH_DOMAIN || "",
+    projectId: process.env.FIREBASE_PROJECT_ID || "",
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "",
+    appId: process.env.FIREBASE_WEB_APP_ID || "",
+  };
+  const missing = enabled
+    ? Object.entries(config).filter(([, value]) => !value).map(([key]) => key)
+    : [];
+  const hasVercelOidc = Boolean(
+    process.env.VERCEL_OIDC_TOKEN
+      && process.env.GCP_PROJECT_NUMBER
+      && process.env.GCP_SERVICE_ACCOUNT_EMAIL
+      && process.env.GCP_WORKLOAD_IDENTITY_POOL_ID
+      && process.env.GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID,
+  );
+  const hasAdminCredentials = Boolean(
+    hasVercelOidc
+      || process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+      || (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY)
+      || process.env.GOOGLE_APPLICATION_CREDENTIALS
+      || process.env.FIRESTORE_EMULATOR_HOST
+      || (process.env.VERCEL !== "1" && process.env.FIREBASE_ADMIN_ACCESS_TOKEN),
+  );
+  if (enabled && !hasAdminCredentials) missing.push("adminCredentials");
+  if (enabled && process.env.VERCEL === "1" && process.env.DATA_BACKEND !== "firestore") {
+    missing.push("DATA_BACKEND=firestore");
+  }
+  return { enabled, config, missing };
+}
 
 const ORDER_STATUSES = [
   { id: "tu_van", label: "Mới / Tư vấn" },
@@ -1904,7 +1941,7 @@ async function handleRequest(req, res) {
     const { pathname, searchParams } = parsePath(req.url);
     if (pathname.startsWith("/api/")) {
       if (req.method === "GET" && pathname === "/api/firebase-config") {
-        const status = firebaseConfigStatus();
+        const status = serverFirebaseConfigStatus();
         if (status.enabled && status.missing.length) {
           json(res, 503, { enabled: true, error: "Firebase chưa được cấu hình đầy đủ: " + status.missing.join(", ") });
           return;
@@ -1913,7 +1950,7 @@ async function handleRequest(req, res) {
         return;
       }
       if (req.method === "GET" && pathname === "/api/health") {
-        json(res, 200, { ok: true, auth: isAuthRequired() ? "firebase" : "local", data: dataStore.backend });
+        json(res, 200, { ok: true, auth: serverAuthRequired() ? "firebase" : "local", data: dataStore.backend });
         return;
       }
       if (req.method === "POST" && pathname === "/api/viettelpost/webhook") {
