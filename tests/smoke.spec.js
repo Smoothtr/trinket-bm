@@ -153,6 +153,18 @@ test("core screens, recommendation fixes, and modals render without client error
   await page.locator(".nav-item[data-view='settings']").click();
   await expect(page.getByText("Audit log")).toBeVisible();
   await expect(page.getByText("Danh mục mẫu sản phẩm")).toHaveCount(0);
+  await page.locator("[data-action='set-settings-tab'][data-tab='accounts']").click();
+  await expect(page.getByRole("heading", { name: "Quản lý tài khoản" })).toBeVisible();
+  await expect(page.locator(".accounts-table tbody tr").first()).toBeVisible();
+  await expect(page.locator(".account-badge.role-admin").first()).toContainText("Admin / Chủ");
+  await expect(page.locator("[data-action='disable-admin-user']").first()).toBeDisabled();
+  await page.locator("[data-action='new-admin-user']").first().click();
+  await expect(page.locator("#adminUserForm input[name='email']")).toBeVisible();
+  await expect(page.locator("#adminUserForm select[name='role'] option")).toHaveCount(4);
+  await expect(page.locator("#adminUserForm input[name='password']")).toHaveCount(0);
+  await page.locator("[aria-label='Đóng']").click();
+  await page.locator("[data-action='set-settings-tab'][data-tab='audit']").click();
+  await expect(page.getByRole("heading", { name: "Audit log" })).toBeVisible();
 
   await page.locator(".nav-item[data-view='finance']").click();
   await expect(page.locator("#expenseForm")).toBeVisible();
@@ -206,4 +218,25 @@ test("login screen fully covers the app on desktop and mobile", async ({ page })
     expect(coverage.height).toBe(viewport.height);
     expect(coverage.backgroundImage.includes("gradient") || coverage.backgroundColor !== "rgba(0, 0, 0, 0)").toBeTruthy();
   }
+});
+
+test("quản lý tài khoản responsive và không tràn ngang trên mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(process.env.BASE_URL || "http://localhost:4173", { waitUntil: "networkidle" });
+  await page.locator(".nav-item[data-view='settings']").click();
+  await page.locator("[data-action='set-settings-tab'][data-tab='accounts']").click();
+  await expect(page.locator(".accounts-table tbody tr").first()).toBeVisible();
+  const overflows = await page.locator(".account-panel").evaluate((panel) => panel.scrollWidth > panel.clientWidth + 1);
+  expect(overflows).toBeFalsy();
+  await page.locator("[data-action='new-admin-user']").first().click();
+  await expect(page.locator("#adminUserForm")).toBeVisible();
+  const modalFits = await page.locator("#adminUserForm").evaluate((form) => form.scrollWidth <= form.clientWidth + 1);
+  expect(modalFits).toBeTruthy();
+});
+
+test("vai trò không phải Admin không nhìn thấy Quản lý tài khoản", async ({ page }) => {
+  await page.goto(process.env.BASE_URL || "http://localhost:4173", { waitUntil: "networkidle" });
+  await page.locator("#roleFilter").selectOption("sale");
+  await page.locator(".nav-item[data-view='settings']").click();
+  await expect(page.locator("[data-action='set-settings-tab'][data-tab='accounts']")).toHaveCount(0);
 });

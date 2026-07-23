@@ -9,6 +9,12 @@ import {
   authenticateRequest,
   authorizeApiRequest,
 } from "./lib/auth.mjs";
+import {
+  createAccountManager,
+  createLocalAuthAdapter,
+  sendFirebasePasswordResetEmail,
+} from "./lib/account-admin.mjs";
+import { getFirebaseServices } from "./lib/firebase-admin.mjs";
 import { createStore } from "./lib/store.mjs";
 
 const PORT = Number(process.env.PORT || 4173);
@@ -380,6 +386,7 @@ function normalizeData(data) {
   data.payments = data.payments || [];
   data.shipments = data.shipments || [];
   data.expenses = data.expenses || [];
+  data.users = data.users || [];
   data.audit_logs = data.audit_logs || [];
   data.settings = {
     default_monthly_revenue_target: 12_500_000,
@@ -1144,12 +1151,64 @@ async function routeApi(req, res, pathname, searchParams) {
   if (req.method === "GET" && pathname === "/api/bootstrap") {
     const marketPrices = await getMarketPrices(data);
     if (marketPrices.changed) await writeStore(data, req.user);
-    json(res, 200, { ...decoratedData(data), market_prices: marketPrices.payload });
+    const payload = decoratedData(data);
+    delete payload.users;
+    json(res, 200, { ...payload, market_prices: marketPrices.payload });
     return;
   }
 
   if (req.method === "GET" && pathname === "/api/admin/export") {
     json(res, 200, data);
+    return;
+  }
+
+  const accountManager = () => createAccountManager({
+    auth: req.user.local ? createLocalAuthAdapter(data, req.user) : getFirebaseServices().auth,
+    persist: writeStore,
+    sendPasswordEmail: req.user.local ? null : sendFirebasePasswordResetEmail,
+  });
+
+  if (req.method === "GET" && pathname === "/api/admin/users") {
+    const result = await accountManager().list(data, {
+      q: searchParams.get("q") || "",
+      role: searchParams.get("role") || "",
+      status: searchParams.get("status") || "",
+      page: searchParams.get("page") || "1",
+      page_size: searchParams.get("page_size") || "10",
+    });
+    json(res, 200, result);
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/admin/users") {
+    const result = await accountManager().create(data, req.user, await readBody(req));
+    json(res, 201, result);
+    return;
+  }
+
+  const adminUserMatch = pathname.match(/^\/api\/admin\/users\/([^/]+)$/);
+  if (req.method === "PATCH" && adminUserMatch) {
+    const result = await accountManager().update(data, req.user, decodeURIComponent(adminUserMatch[1]), await readBody(req));
+    json(res, 200, result);
+    return;
+  }
+
+  const accountStatusMatch = pathname.match(/^\/api\/admin\/users\/([^/]+)\/(disable|enable)$/);
+  if (req.method === "POST" && accountStatusMatch) {
+    const result = await accountManager().setDisabled(
+      data,
+      req.user,
+      decodeURIComponent(accountStatusMatch[1]),
+      accountStatusMatch[2] === "disable",
+    );
+    json(res, 200, result);
+    return;
+  }
+
+  const passwordLinkMatch = pathname.match(/^\/api\/admin\/users\/([^/]+)\/send-password-link$/);
+  if (req.method === "POST" && passwordLinkMatch) {
+    const result = await accountManager().sendPasswordLink(data, req.user, decodeURIComponent(passwordLinkMatch[1]));
+    json(res, 200, result);
     return;
   }
 

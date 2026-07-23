@@ -37,6 +37,11 @@ const state = {
   orderSort: { key: "date_order", dir: "desc" },
   orderView: "table",
   productTab: "catalog",
+  settingsTab: "permissions",
+  accountUsers: null,
+  accountUsersLoading: false,
+  accountUsersError: "",
+  accountFilters: { q: "", role: "all", status: "all", page: 1, page_size: 10 },
   dragOrderId: null,
   selected: {
     orders: new Set(),
@@ -1619,45 +1624,318 @@ function renderProducts() {
   </div>`;
 }
 
+function accountRoleBadge(role) {
+  return `<span class="account-badge role-${esc(role || "unknown")}">${esc(roleDisplayName(role) || "Chưa gán quyền")}</span>`;
+}
+
+function accountStatusBadge(status) {
+  return status === "disabled"
+    ? `<span class="account-badge status-disabled">Đã khóa</span>`
+    : `<span class="account-badge status-active">Đang hoạt động</span>`;
+}
+
+function accountRoleOptions(selected = "") {
+  return [
+    { id: "admin", label: "Admin / Chủ" },
+    { id: "sale", label: "Sale" },
+    { id: "ops", label: "Vận hành / Kho" },
+    { id: "accounting", label: "Kế toán" },
+  ].map((role) => `<option value="${role.id}" ${role.id === selected ? "selected" : ""}>${role.label}</option>`).join("");
+}
+
+function auditActionLabel(action) {
+  return {
+    "user.create": "Tạo tài khoản",
+    "user.update": "Cập nhật tài khoản",
+    "user.role_change": "Đổi vai trò",
+    "user.disable": "Khóa tài khoản",
+    "user.enable": "Mở khóa tài khoản",
+    "user.password_link_sent": "Gửi email đặt mật khẩu",
+  }[action] || action;
+}
+
+function renderSettingsPermissions() {
+  return `
+    <section class="grid-2">
+      <article class="panel">
+        <div class="panel-header"><h2>Phân quyền</h2><span class="tag">RBAC</span></div>
+        <div class="panel-body">
+          <div class="metric-row"><span>Admin / Chủ</span><strong>Toàn quyền</strong></div>
+          <div class="metric-row"><span>Sale</span><strong>Ẩn giá vốn & lợi nhuận</strong></div>
+          <div class="metric-row"><span>Vận hành / Kho</span><strong>Xem nguồn hàng, tạo vận đơn</strong></div>
+          <div class="metric-row"><span>Kế toán</span><strong>Thanh toán, lãi/lỗ, chi phí</strong></div>
+        </div>
+      </article>
+      <article class="panel">
+        <div class="panel-header"><h2>Thông tin cần cấu hình thật</h2><span class="tag">Viettel Post</span></div>
+        <div class="panel-body">
+          <div class="metric-row"><span>Token/API account</span><strong>Chưa cấu hình</strong></div>
+          <div class="metric-row"><span>Kho gửi mặc định</span><strong>Chưa cấu hình</strong></div>
+          <div class="metric-row"><span>Danh mục tỉnh/huyện/xã</span><strong>Cache định kỳ</strong></div>
+          <div class="metric-row"><span>Queue/Cron tracking</span><strong>30-60 phút</strong></div>
+        </div>
+      </article>
+    </section>
+  `;
+}
+
+function renderAccountRows(users) {
+  return users.map((user) => `
+    <tr>
+      <td data-label="Họ và tên"><strong>${esc(user.display_name || "Chưa cập nhật")}</strong>${user.invitation_status === "failed" ? `<br><span class="small negative">Chưa gửi được email mời</span>` : ""}</td>
+      <td data-label="Email">${esc(user.email)}</td>
+      <td data-label="Vai trò">${accountRoleBadge(user.role)}</td>
+      <td data-label="Trạng thái">${accountStatusBadge(user.status)}</td>
+      <td data-label="Ngày tạo">${fmtDateTime(user.created_at)}</td>
+      <td data-label="Thao tác">
+        <div class="account-row-actions">
+          <button class="ghost" data-action="edit-admin-user" data-user-id="${esc(user.uid)}" title="Chỉnh sửa thông tin và vai trò" aria-label="Chỉnh sửa ${esc(user.email)}"><i data-lucide="pencil"></i></button>
+          ${user.status === "disabled"
+            ? `<button class="ghost" data-action="enable-admin-user" data-user-id="${esc(user.uid)}" title="Mở khóa tài khoản" aria-label="Mở khóa ${esc(user.email)}"><i data-lucide="lock-open"></i></button>`
+            : `<button class="ghost danger-soft" data-action="disable-admin-user" data-user-id="${esc(user.uid)}" title="${user.uid === state.session?.user?.uid ? "Không thể tự khóa tài khoản đang đăng nhập" : "Khóa tài khoản"}" aria-label="Khóa ${esc(user.email)}" ${user.uid === state.session?.user?.uid ? "disabled" : ""}><i data-lucide="lock-keyhole"></i></button>`}
+          <button class="ghost" data-action="send-admin-password-link" data-user-id="${esc(user.uid)}" title="${user.invitation_status === "sent" ? "Gửi email đặt lại mật khẩu" : "Gửi email thiết lập mật khẩu"}" aria-label="Gửi email đặt mật khẩu cho ${esc(user.email)}" ${user.status === "disabled" ? "disabled" : ""}><i data-lucide="mail"></i></button>
+        </div>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function renderSettingsAccounts() {
+  if (state.role !== "admin") {
+    return `<div class="empty"><i data-lucide="shield-x"></i><strong>Không có quyền truy cập</strong><span>Chỉ Admin / Chủ được quản lý tài khoản.</span></div>`;
+  }
+  const result = state.accountUsers;
+  const filters = state.accountFilters;
+  return `
+    <section class="panel account-panel">
+      <div class="panel-header">
+        <div><h2>Quản lý tài khoản</h2><p class="muted small">Tạo nhân viên, gán vai trò và kiểm soát quyền đăng nhập.</p></div>
+        <button class="primary" data-action="new-admin-user"><i data-lucide="user-plus"></i><span>Tạo tài khoản</span></button>
+      </div>
+      <div class="panel-body account-toolbar">
+        <form id="adminUserSearchForm" class="account-search">
+          <label class="search"><i data-lucide="search"></i><input name="q" type="search" value="${esc(filters.q)}" placeholder="Tìm theo họ tên hoặc email"></label>
+          <button class="button" type="submit">Tìm kiếm</button>
+        </form>
+        <div class="account-filters">
+          <select id="adminUserRoleFilter" aria-label="Lọc vai trò">
+            <option value="all">Tất cả vai trò</option>
+            ${accountRoleOptions(filters.role)}
+          </select>
+          <select id="adminUserStatusFilter" aria-label="Lọc trạng thái">
+            <option value="all" ${filters.status === "all" ? "selected" : ""}>Tất cả trạng thái</option>
+            <option value="active" ${filters.status === "active" ? "selected" : ""}>Đang hoạt động</option>
+            <option value="disabled" ${filters.status === "disabled" ? "selected" : ""}>Đã khóa</option>
+          </select>
+        </div>
+      </div>
+      ${state.accountUsersLoading ? `
+        <div class="account-skeleton" aria-label="Đang tải tài khoản"><span></span><span></span><span></span><span></span></div>
+      ` : state.accountUsersError ? `
+        <div class="empty compact"><i data-lucide="triangle-alert"></i><strong>Không tải được danh sách tài khoản</strong><span>${esc(state.accountUsersError)}</span><button class="button" data-action="reload-admin-users">Thử lại</button></div>
+      ` : !result?.users?.length ? `
+        <div class="empty"><i data-lucide="users"></i><strong>Chưa có tài khoản phù hợp</strong><span>Thử thay đổi bộ lọc hoặc tạo tài khoản nhân viên đầu tiên.</span><button class="primary" data-action="new-admin-user">Tạo tài khoản</button></div>
+      ` : `
+        <div class="table-wrap">
+          <table class="accounts-table">
+            <thead><tr><th>Họ và tên</th><th>Email đăng nhập</th><th>Vai trò</th><th>Trạng thái</th><th>Ngày tạo</th><th>Thao tác</th></tr></thead>
+            <tbody>${renderAccountRows(result.users)}</tbody>
+          </table>
+        </div>
+        <div class="account-pagination">
+          <span class="muted small">${fmtNumber(result.pagination.total)} tài khoản · Trang ${result.pagination.page}/${result.pagination.pages}</span>
+          <div>
+            <button class="button" data-action="admin-users-page" data-page="${result.pagination.page - 1}" ${result.pagination.page <= 1 ? "disabled" : ""}><i data-lucide="chevron-left"></i><span>Trước</span></button>
+            <button class="button" data-action="admin-users-page" data-page="${result.pagination.page + 1}" ${result.pagination.page >= result.pagination.pages ? "disabled" : ""}><span>Sau</span><i data-lucide="chevron-right"></i></button>
+          </div>
+        </div>
+      `}
+    </section>
+  `;
+}
+
+function renderSettingsAudit() {
+  return `
+    <section class="panel">
+      <div class="panel-header"><h2>Audit log</h2><span class="tag">${state.data.audit_logs.length} bản ghi</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Thời gian</th><th>User</th><th>Hành động</th><th>Entity</th><th>ID</th></tr></thead>
+          <tbody>
+            ${state.data.audit_logs
+              .slice(0, 30)
+              .map((log) => `<tr><td>${fmtDateTime(log.created_at)}</td><td>${esc(log.user)}</td><td>${esc(auditActionLabel(log.action))}</td><td>${esc(log.entity)}</td><td>${esc(log.entity_id)}</td></tr>`)
+              .join("") || `<tr><td colspan="5" class="muted">Chưa có thao tác phát sinh trong store hiện tại.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
 function renderSettings() {
+  if (state.role !== "admin" && state.settingsTab === "accounts") state.settingsTab = "permissions";
   return `
     <div class="stack">
-      <section class="grid-2">
-        <article class="panel">
-          <div class="panel-header"><h2>Phân quyền</h2><span class="tag">RBAC</span></div>
-          <div class="panel-body">
-            <div class="metric-row"><span>Admin / Chủ</span><strong>Toàn quyền</strong></div>
-            <div class="metric-row"><span>Sale</span><strong>Ẩn giá vốn & lợi nhuận</strong></div>
-            <div class="metric-row"><span>Vận hành / Kho</span><strong>Xem nguồn hàng, tạo vận đơn</strong></div>
-            <div class="metric-row"><span>Kế toán</span><strong>Thanh toán, lãi/lỗ, chi phí</strong></div>
-          </div>
-        </article>
-        <article class="panel">
-          <div class="panel-header"><h2>Thông tin cần cấu hình thật</h2><span class="tag">Viettel Post</span></div>
-          <div class="panel-body">
-            <div class="metric-row"><span>Token/API account</span><strong>Chưa cấu hình</strong></div>
-            <div class="metric-row"><span>Kho gửi mặc định</span><strong>Chưa cấu hình</strong></div>
-            <div class="metric-row"><span>Danh mục tỉnh/huyện/xã</span><strong>Cache định kỳ</strong></div>
-            <div class="metric-row"><span>Queue/Cron tracking</span><strong>30-60 phút</strong></div>
-          </div>
-        </article>
+      <section class="settings-tabs" aria-label="Các khu vực cấu hình">
+        <button class="button ${state.settingsTab === "permissions" ? "is-active" : ""}" data-action="set-settings-tab" data-tab="permissions"><i data-lucide="shield-check"></i><span>Phân quyền</span></button>
+        ${state.role === "admin" ? `<button class="button ${state.settingsTab === "accounts" ? "is-active" : ""}" data-action="set-settings-tab" data-tab="accounts"><i data-lucide="users"></i><span>Quản lý tài khoản</span></button>` : ""}
+        <button class="button ${state.settingsTab === "audit" ? "is-active" : ""}" data-action="set-settings-tab" data-tab="audit"><i data-lucide="history"></i><span>Audit log</span></button>
       </section>
-      <section class="panel">
-        <div class="panel-header"><h2>Audit log</h2><span class="tag">${state.data.audit_logs.length} bản ghi</span></div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Thời gian</th><th>User</th><th>Hành động</th><th>Entity</th><th>ID</th></tr></thead>
-            <tbody>
-              ${state.data.audit_logs
-                .slice(0, 30)
-                .map((log) => `<tr><td>${fmtDateTime(log.created_at)}</td><td>${esc(log.user)}</td><td>${esc(log.action)}</td><td>${esc(log.entity)}</td><td>${esc(log.entity_id)}</td></tr>`)
-                .join("") || `<tr><td colspan="5" class="muted">Chưa có thao tác phát sinh trong store hiện tại.</td></tr>`}
-            </tbody>
-          </table>
+      ${state.settingsTab === "accounts"
+        ? renderSettingsAccounts()
+        : state.settingsTab === "audit" ? renderSettingsAudit() : renderSettingsPermissions()}
+    </div>
+  `;
+}
+
+async function loadAdminUsers({ page = state.accountFilters.page, showLoading = true } = {}) {
+  if (state.role !== "admin") {
+    state.accountUsers = null;
+    state.accountUsersError = "Bạn không có quyền thực hiện thao tác này.";
+    return;
+  }
+  state.accountFilters.page = Math.max(1, Number(page || 1));
+  state.accountUsersError = "";
+  if (showLoading) {
+    state.accountUsersLoading = true;
+    if (state.view === "settings" && state.settingsTab === "accounts") render();
+  }
+  try {
+    const params = new URLSearchParams({
+      q: state.accountFilters.q,
+      role: state.accountFilters.role,
+      status: state.accountFilters.status,
+      page: String(state.accountFilters.page),
+      page_size: String(state.accountFilters.page_size),
+    });
+    state.accountUsers = await api(`/api/admin/users?${params}`);
+    state.accountFilters.page = state.accountUsers.pagination.page;
+  } catch (error) {
+    state.accountUsersError = error.message || "Không thể tải danh sách tài khoản.";
+  } finally {
+    state.accountUsersLoading = false;
+    if (state.view === "settings" && state.settingsTab === "accounts") render();
+  }
+}
+
+function openAdminUserEditor(userId = "") {
+  const user = userId ? state.accountUsers?.users?.find((item) => item.uid === userId) : null;
+  if (userId && !user) return toast("Không tìm thấy tài khoản.");
+  modalHost.innerHTML = `
+    <div class="modal-backdrop" data-action="close-modal">
+      <section class="modal modal-narrow" role="dialog" aria-modal="true" aria-label="${user ? "Chỉnh sửa tài khoản" : "Tạo tài khoản"}">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Quản lý tài khoản</p>
+            <h2>${user ? "Chỉnh sửa tài khoản" : "Tạo tài khoản"}</h2>
+            <p class="muted small">${user ? "Cập nhật hồ sơ, vai trò hoặc trạng thái đăng nhập." : "Nhân viên sẽ tự thiết lập mật khẩu qua email."}</p>
+          </div>
+          <button class="ghost" data-action="close-modal" aria-label="Đóng"><i data-lucide="x"></i></button>
+        </div>
+        <div class="modal-body">
+          <form id="adminUserForm" class="form-grid" data-user-id="${esc(user?.uid || "")}">
+            <div class="field full"><label>Họ và tên *</label><input name="display_name" value="${esc(user?.display_name || "")}" autocomplete="name" required></div>
+            <div class="field full"><label>Email đăng nhập *</label><input name="email" type="email" value="${esc(user?.email || "")}" autocomplete="email" required ${user ? "disabled" : ""}>${user ? `<span class="small muted">Email được khóa để tránh mất đồng bộ với Firebase Authentication.</span>` : ""}</div>
+            <div class="field"><label>Số điện thoại</label><input name="phone" type="tel" value="${esc(user?.phone || "")}" autocomplete="tel"></div>
+            <div class="field"><label>Vai trò *</label><select name="role" required>${accountRoleOptions(user?.role || "sale")}</select></div>
+            <div class="field full"><label>Trạng thái</label><select name="status">
+              <option value="active" ${user?.status !== "disabled" ? "selected" : ""}>Đang hoạt động</option>
+              <option value="disabled" ${user?.status === "disabled" ? "selected" : ""}>Đã khóa</option>
+            </select></div>
+          </form>
+          ${user ? `<p class="small muted account-form-note"><i data-lucide="info"></i><span>UID Firebase: ${esc(user.uid)}</span></p>` : `<p class="small muted account-form-note"><i data-lucide="mail-check"></i><span>Không có mật khẩu tạm thời và Admin không nhìn thấy mật khẩu của nhân viên.</span></p>`}
+        </div>
+        <div class="modal-footer">
+          <button class="button" type="button" data-action="close-modal">Hủy</button>
+          <button class="primary" type="submit" form="adminUserForm"><i data-lucide="${user ? "save" : "user-plus"}"></i><span>${user ? "Lưu thay đổi" : "Tạo tài khoản"}</span></button>
         </div>
       </section>
     </div>
   `;
+  refreshIcons();
+}
+
+async function refreshAccountsAfterMutation() {
+  await loadData();
+  await loadAdminUsers({ showLoading: false });
+}
+
+async function saveAdminUserForm(form) {
+  if (!form?.reportValidity()) return;
+  const submitter = modalHost.querySelector('[type="submit"][form="adminUserForm"]');
+  const values = new FormData(form);
+  const userId = form.dataset.userId || "";
+  const existing = userId ? state.accountUsers?.users?.find((item) => item.uid === userId) : null;
+  const body = {
+    display_name: String(values.get("display_name") || "").trim(),
+    email: String(values.get("email") || "").trim().toLowerCase(),
+    phone: String(values.get("phone") || "").trim(),
+    role: String(values.get("role") || ""),
+    status: String(values.get("status") || "active"),
+  };
+  if (existing?.role === "admin" && body.role !== "admin") {
+    if (!window.confirm(`Bạn sắp hạ quyền Admin / Chủ của ${existing.email}. Quyền mới sẽ có hiệu lực ngay trên API và người dùng phải đăng nhập lại.`)) return;
+  }
+  if (existing?.status === "active" && body.status === "disabled") {
+    const confirmed = window.confirm("Bạn có chắc chắn muốn khóa tài khoản này? Người dùng sẽ không thể tiếp tục đăng nhập nhưng dữ liệu và lịch sử làm việc vẫn được giữ lại.");
+    if (!confirmed) return;
+  }
+  if (submitter) submitter.disabled = true;
+  try {
+    if (!existing) {
+      const result = await api("/api/admin/users", { method: "POST", body });
+      closeModal();
+      await refreshAccountsAfterMutation();
+      toast(result.warning || "Tạo tài khoản thành công.");
+      return;
+    }
+    const updateResult = await api(`/api/admin/users/${encodeURIComponent(userId)}`, {
+      method: "PATCH",
+      body: { display_name: body.display_name, phone: body.phone, role: body.role },
+    });
+    if (body.status !== existing.status) {
+      await api(`/api/admin/users/${encodeURIComponent(userId)}/${body.status === "disabled" ? "disable" : "enable"}`, {
+        method: "POST",
+        body: {},
+      });
+    }
+    closeModal();
+    if (updateResult.self_role_changed) {
+      await window.TrinketFirebase.signOut();
+      state.data = null;
+      state.session = null;
+      showLogin("Vai trò của bạn đã thay đổi. Vui lòng đăng nhập lại.");
+      return;
+    }
+    await refreshAccountsAfterMutation();
+    toast(body.role !== existing.role ? "Đã cập nhật vai trò." : "Đã cập nhật tài khoản.");
+  } finally {
+    if (submitter?.isConnected) submitter.disabled = false;
+  }
+}
+
+async function setAdminUserDisabled(userId, disabled) {
+  const user = state.accountUsers?.users?.find((item) => item.uid === userId);
+  if (!user) throw new Error("Không tìm thấy tài khoản.");
+  if (disabled) {
+    const confirmed = window.confirm("Bạn có chắc chắn muốn khóa tài khoản này? Người dùng sẽ không thể tiếp tục đăng nhập nhưng dữ liệu và lịch sử làm việc vẫn được giữ lại.");
+    if (!confirmed) return;
+  }
+  await api(`/api/admin/users/${encodeURIComponent(userId)}/${disabled ? "disable" : "enable"}`, {
+    method: "POST",
+    body: {},
+  });
+  await refreshAccountsAfterMutation();
+  toast(disabled ? "Đã khóa tài khoản." : "Đã mở khóa tài khoản.");
+}
+
+async function sendAdminPasswordLink(userId) {
+  const user = state.accountUsers?.users?.find((item) => item.uid === userId);
+  if (!user) throw new Error("Không tìm thấy tài khoản.");
+  const result = await api(`/api/admin/users/${encodeURIComponent(userId)}/send-password-link`, { method: "POST", body: {} });
+  await refreshAccountsAfterMutation();
+  toast(result.warning || (user.invitation_status === "sent" ? "Đã gửi email đặt lại mật khẩu." : "Đã gửi email thiết lập mật khẩu."));
 }
 
 function render() {
@@ -3927,6 +4205,14 @@ function bindShell() {
       state.quickFilter = event.target.value;
       render();
     }
+    if (event.target.id === "adminUserRoleFilter") {
+      state.accountFilters.role = event.target.value;
+      loadAdminUsers({ page: 1 }).catch((error) => toast(error.message));
+    }
+    if (event.target.id === "adminUserStatusFilter") {
+      state.accountFilters.status = event.target.value;
+      loadAdminUsers({ page: 1 }).catch((error) => toast(error.message));
+    }
   });
 
   app.addEventListener("keydown", (event) => {
@@ -3965,6 +4251,16 @@ function bindShell() {
   });
 
   app.addEventListener("submit", async (event) => {
+    if (event.target.id === "adminUserSearchForm") {
+      event.preventDefault();
+      state.accountFilters.q = String(new FormData(event.target).get("q") || "").trim();
+      try {
+        await loadAdminUsers({ page: 1 });
+      } catch (error) {
+        toast(error.message);
+      }
+      return;
+    }
     if (event.target.id === "expenseForm") {
       try {
         await submitExpense(event);
@@ -4064,6 +4360,15 @@ function bindShell() {
         showLogin(error.message || "Đăng nhập không thành công.");
       } finally {
         if (submitter) submitter.disabled = false;
+      }
+      return;
+    }
+    if (event.target.id === "adminUserForm") {
+      event.preventDefault();
+      try {
+        await saveAdminUserForm(event.target);
+      } catch (error) {
+        toast(error.message);
       }
       return;
     }
@@ -4215,6 +4520,20 @@ function bindShell() {
         state.productTab = actionTarget.dataset.tab || "catalog";
         render();
       }
+      if (action === "set-settings-tab") {
+        const tab = actionTarget.dataset.tab || "permissions";
+        if (tab === "accounts" && state.role !== "admin") throw new Error("Bạn không có quyền thực hiện thao tác này.");
+        state.settingsTab = tab;
+        render();
+        if (tab === "accounts" && !state.accountUsers) await loadAdminUsers();
+      }
+      if (action === "reload-admin-users") await loadAdminUsers();
+      if (action === "new-admin-user") openAdminUserEditor();
+      if (action === "edit-admin-user") openAdminUserEditor(actionTarget.dataset.userId);
+      if (action === "disable-admin-user") await setAdminUserDisabled(actionTarget.dataset.userId, true);
+      if (action === "enable-admin-user") await setAdminUserDisabled(actionTarget.dataset.userId, false);
+      if (action === "send-admin-password-link") await sendAdminPasswordLink(actionTarget.dataset.userId);
+      if (action === "admin-users-page") await loadAdminUsers({ page: Number(actionTarget.dataset.page || 1) });
       if (action === "new-product") openProductEditor();
       if (action === "edit-product") openProductEditor(actionTarget.dataset.productId);
       if (action === "save-product") await saveProductFromForm();

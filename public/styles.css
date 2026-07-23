@@ -1474,6 +1474,121 @@ tbody tr:hover .row-actions,
   overflow-x: auto;
 }
 
+.settings-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 2px;
+  overflow-x: auto;
+}
+
+.settings-tabs .button.is-active {
+  color: #fff;
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
+.account-panel .panel-header h2,
+.account-panel .panel-header p {
+  margin-bottom: 0;
+}
+
+.account-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.account-search,
+.account-filters,
+.account-row-actions,
+.account-pagination,
+.account-pagination > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.account-search {
+  flex: 1 1 420px;
+}
+
+.account-search .search {
+  width: min(420px, 100%);
+}
+
+.account-filters {
+  flex: 0 1 auto;
+}
+
+.accounts-table {
+  min-width: 1040px;
+}
+
+.account-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.account-badge.role-admin { color: #7c2638; background: #f9e9ed; }
+.account-badge.role-sale { color: #3f4f8f; background: #eef1fb; }
+.account-badge.role-ops { color: #2f6c62; background: #e8f2ef; }
+.account-badge.role-accounting { color: #765319; background: #fff2d8; }
+.account-badge.role-unknown { color: var(--muted); background: var(--surface-2); }
+.account-badge.status-active { color: #2e6d3d; background: #e8f5e9; }
+.account-badge.status-disabled { color: #a12f3d; background: #fde8eb; }
+
+.account-row-actions {
+  justify-content: flex-end;
+}
+
+.account-row-actions .ghost {
+  width: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+}
+
+.account-pagination {
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-top: 1px solid var(--line);
+}
+
+.account-skeleton {
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+}
+
+.account-skeleton span {
+  min-height: 58px;
+  background: linear-gradient(90deg, #f3f2ec 0%, #fff 45%, #f3f2ec 90%);
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.account-form-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 14px 0 0;
+}
+
+.account-form-note svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
 .field-output {
   display: flex;
   align-items: center;
@@ -2330,6 +2445,84 @@ tbody tr:hover .row-actions,
   .toolbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .account-toolbar,
+  .account-search,
+  .account-filters,
+  .account-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .account-search {
+    width: 100%;
+    flex-basis: auto;
+  }
+
+  .account-search .search,
+  .account-search .button,
+  .account-filters select,
+  .account-pagination .button {
+    width: 100%;
+  }
+
+  .account-filters,
+  .account-pagination > div {
+    display: grid;
+    width: 100%;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .accounts-table {
+    min-width: 0;
+  }
+
+  .accounts-table thead {
+    display: none;
+  }
+
+  .accounts-table,
+  .accounts-table tbody,
+  .accounts-table tr,
+  .accounts-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .accounts-table tr {
+    width: calc(100% - 24px);
+    margin: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    overflow: hidden;
+  }
+
+  .accounts-table td {
+    display: grid;
+    grid-template-columns: 102px minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+  }
+
+  .accounts-table td:last-child {
+    border-bottom: 0;
+  }
+
+  .accounts-table td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .account-row-actions {
+    justify-content: flex-start;
   }
 
   .filter-notice {

@@ -5,6 +5,7 @@ import {
   authorizeApiRequest,
   firebaseConfigStatus,
   isAuthRequired,
+  roleFromCurrentUserRecord,
 } from "../lib/auth.mjs";
 
 function request(role, method = "GET") {
@@ -94,6 +95,35 @@ test("all assigned roles may read bootstrap, but only admin may export raw data"
   }
   assert.equal(statusCode(() => authorizeApiRequest(request("sale"), "/api/admin/export")), 403);
   assert.equal(statusCode(() => authorizeApiRequest(request("admin"), "/api/admin/export")), 200);
+});
+
+test("mọi API quản lý tài khoản đều chỉ dành cho Admin", () => {
+  const routes = [
+    ["/api/admin/users", "GET"],
+    ["/api/admin/users", "POST"],
+    ["/api/admin/users/user-1", "PATCH"],
+    ["/api/admin/users/user-1/disable", "POST"],
+    ["/api/admin/users/user-1/enable", "POST"],
+    ["/api/admin/users/user-1/send-password-link", "POST"],
+  ];
+  for (const [pathname, method] of routes) {
+    assert.equal(statusCode(() => authorizeApiRequest(request("admin", method), pathname)), 200);
+    for (const role of ["sale", "ops", "accounting"]) {
+      assert.equal(statusCode(() => authorizeApiRequest(request(role, method), pathname)), 403);
+    }
+  }
+});
+
+test("backend dùng Custom Claims hiện hành và chặn ngay tài khoản đã khóa", () => {
+  assert.equal(roleFromCurrentUserRecord({ disabled: false, customClaims: { role: "sale" } }), "sale");
+  assert.throws(
+    () => roleFromCurrentUserRecord({ disabled: true, customClaims: { role: "admin" } }),
+    (error) => error.statusCode === 403 && /đã bị khóa/.test(error.message),
+  );
+  assert.throws(
+    () => roleFromCurrentUserRecord({ disabled: false, customClaims: {} }),
+    (error) => error.statusCode === 403,
+  );
 });
 
 test("write permissions match the four existing roles", () => {

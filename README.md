@@ -22,7 +22,7 @@
 - Storage bucket: `trinket-54786.firebasestorage.app`, region `ASIA-SOUTHEAST1`.
 - Authentication: Email/Password đã bật.
 - Authorized domains: `localhost`, `trinket-bm.gg99.vn` và hai domain mặc định của Firebase.
-- Service account không khóa: `trinket-vercel@trinket-54786.iam.gserviceaccount.com`, chỉ có `roles/datastore.user` và `roles/firebaseauth.viewer`.
+- Service account không khóa: `trinket-vercel@trinket-54786.iam.gserviceaccount.com`, có `roles/datastore.user`, `roles/firebaseauth.viewer` và custom role tối thiểu `projects/trinket-54786/roles/trinketFirebaseUserManager` để tạo/khóa user, cập nhật Custom Claims và rollback user khi ghi hồ sơ thất bại.
 - Firestore rules/indexes và Storage rules đã deploy.
 - Dữ liệu `data/seed.json` đã migration thành công sang Firestore.
 - Tài khoản `smooth@gg99.vn` đã có custom claim `admin`; dùng “Quên mật khẩu” để đặt mật khẩu lần đầu.
@@ -62,6 +62,8 @@ Sau khi đăng nhập đúng Vercel team/project đang sở hữu `trinket-bm.gg
 
 Ứng dụng dùng `@vercel/oidc` và `google-auth-library` để đổi token ngắn hạn lấy quyền service account. Không cần và không nên tạo `FIREBASE_SERVICE_ACCOUNT_JSON`.
 
+API Quản lý tài khoản cần các permission `firebaseauth.users.get`, `firebaseauth.users.create`, `firebaseauth.users.update` và `firebaseauth.users.delete` (delete chỉ dùng để rollback một lần tạo hồ sơ bị lỗi, giao diện không có chức năng xóa). Production đang dùng custom IAM role `trinketFirebaseUserManager` chỉ gồm bốn permission này; không cấp role `roles/firebaseauth.admin` rộng.
+
 ## Biến môi trường Vercel
 
 ```text
@@ -72,6 +74,7 @@ FIREBASE_AUTH_DOMAIN=trinket-54786.firebaseapp.com
 FIREBASE_PROJECT_ID=trinket-54786
 FIREBASE_STORAGE_BUCKET=trinket-54786.firebasestorage.app
 FIREBASE_WEB_APP_ID=1:526965479424:web:6f2c47d8f47e423fbae0e5
+AUTH_PASSWORD_RESET_CONTINUE_URL=https://trinket-bm.gg99.vn/
 GCP_PROJECT_ID=trinket-54786
 GCP_PROJECT_NUMBER=526965479424
 GCP_SERVICE_ACCOUNT_EMAIL=trinket-vercel@trinket-54786.iam.gserviceaccount.com
@@ -104,6 +107,12 @@ npm run firebase:migrate -- --source=C:\backup.json --force --confirm=OVERWRITE_
 
 ## Tạo tài khoản và gán quyền
 
+Trong ứng dụng, đăng nhập bằng Admin / Chủ, mở **Cấu hình → Quản lý tài khoản → Tạo tài khoản**. Admin chỉ nhập hồ sơ và chọn một trong bốn role hiện có; hệ thống không yêu cầu và không hiển thị mật khẩu. Firebase gửi email để nhân viên tự đặt mật khẩu lần đầu.
+
+API dùng collection `users` làm hồ sơ nhân viên và Firebase Custom Claim `role` làm nguồn quyền thực thi. Mỗi request backend đọc Custom Claims hiện hành từ Firebase, do đó quyền cũ không tiếp tục được tin cậy. Khi đổi role hoặc khóa tài khoản, refresh token cũng bị thu hồi.
+
+Script dưới đây chỉ dành cho bootstrap/khôi phục khi chưa truy cập được giao diện Admin:
+
 ```bash
 npm run firebase:create-user -- --email=admin@example.com --role=admin --name="Admin Trinket"
 npm run firebase:create-user -- --email=sale@example.com --role=sale --name="Nhân viên Sale"
@@ -116,7 +125,7 @@ Vai trò:
 - `ops`: sản phẩm, tồn kho, nguồn hàng, giao vận; trong deal chỉ đổi trạng thái và phí giao.
 - `accounting`: chi phí và thanh toán; được xem dữ liệu tài chính.
 
-Nếu không truyền `--password`, script sinh mật khẩu tạm. Thêm `--no-print-password` để không in mật khẩu và dùng “Quên mật khẩu” trên màn hình đăng nhập. Sau khi đổi role, người dùng cần đăng xuất/đăng nhập lại để nhận custom claim mới.
+Script không tạo hoặc in mật khẩu tạm. Sau khi tạo/gán role, script gửi email đặt mật khẩu bằng template của Firebase. Nếu gửi email thất bại, kết quả trả về `passwordEmailSent: false` và có cảnh báo thật; có thể gửi lại từ giao diện Quản lý tài khoản.
 
 ## Giá vốn và ảnh sản phẩm trong deal
 
