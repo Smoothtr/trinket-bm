@@ -39,6 +39,10 @@ body.modal-open {
   overflow: hidden;
 }
 
+.auth-pending .shell {
+  visibility: hidden;
+}
+
 button,
 input,
 select,

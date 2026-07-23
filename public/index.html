@@ -1,13 +1,13 @@
 <!doctype html>
-<html lang="vi">
+<html lang="vi" class="auth-pending">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Trinket Business Manager</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
-<body>
-  <div class="shell">
+<body class="modal-open">
+  <div class="shell" id="appShell" aria-hidden="true">
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-mark">T</div>
@@ -68,7 +68,40 @@
   </div>
 
   <div id="toastHost" class="toast-host" aria-live="assertive"></div>
-  <div id="modalHost"></div>
+  <div id="modalHost">
+    <div class="modal-backdrop auth-backdrop">
+      <section id="authBootScreen" class="modal auth-screen" role="dialog" aria-modal="true" aria-label="Đăng nhập Trinket" data-auth-lock="true">
+        <div class="auth-brand-panel">
+          <div class="auth-brand-lockup">
+            <span class="auth-brand-mark" aria-hidden="true">T</span>
+            <span><strong>Trinket</strong><small>Business Manager</small></span>
+          </div>
+          <div class="auth-brand-copy">
+            <p class="eyebrow">Không gian làm việc nội bộ</p>
+            <h1>Quản lý vận hành trang sức trong một nơi.</h1>
+            <p>Theo dõi deal, sản phẩm, khách hàng và tài chính với dữ liệu được phân quyền cho từng nhân viên.</p>
+          </div>
+          <p class="auth-security-note"><i data-lucide="shield-check"></i><span>Hệ thống riêng tư · Firebase Authentication</span></p>
+        </div>
+        <div class="auth-form-panel">
+          <div class="auth-form-header">
+            <p class="eyebrow">Nội bộ Trinket</p>
+            <h2>Chào mừng trở lại</h2>
+            <p>Sử dụng tài khoản nhân viên đã được cấp quyền.</p>
+          </div>
+          <form id="authLoginForm" class="form-grid auth-form">
+            <div class="field full"><label>Email</label><input name="email" type="email" autocomplete="username" required placeholder="ten@trinket.vn"></div>
+            <div class="field full"><label>Mật khẩu</label><input name="password" type="password" autocomplete="current-password" required></div>
+          </form>
+          <div class="auth-actions">
+            <button class="primary auth-submit" type="submit" form="authLoginForm"><i data-lucide="log-in"></i><span>Đăng nhập</span></button>
+            <button class="auth-forgot" type="button" data-action="open-login-password-change"><i data-lucide="key-round"></i><span>Đổi mật khẩu</span></button>
+          </div>
+          <p class="auth-help">Tài khoản mới hoặc vừa được reset sử dụng mật khẩu mặc định do Admin / Chủ cung cấp. Nếu quên mật khẩu, vui lòng liên hệ Admin / Chủ.</p>
+        </div>
+      </section>
+    </div>
+  </div>
 
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <script src="/firebase-client.js"></script>

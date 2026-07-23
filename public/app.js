@@ -2,7 +2,13 @@
 const modalHost = document.querySelector("#modalHost");
 const toastHost = document.querySelector("#toastHost");
 const viewTitle = document.querySelector("#viewTitle");
+const appShell = document.querySelector("#appShell");
 const DEFAULT_ACCOUNT_PASSWORD = "Gg1234";
+
+function finishAuthBootstrap({ revealApp = false } = {}) {
+  document.documentElement.classList.toggle("auth-pending", !revealApp);
+  appShell?.setAttribute("aria-hidden", revealApp ? "false" : "true");
+}
 
 function closeModal() {
   const orderForm = modalHost.querySelector(".order-editor-form");
@@ -358,6 +364,7 @@ function showLogin(message = "") {
       </section>
     </div>
   `;
+  finishAuthBootstrap();
   refreshIcons();
 }
 
@@ -396,6 +403,7 @@ function showRequiredPasswordChange(message = "") {
       </section>
     </div>
   `;
+  finishAuthBootstrap();
   refreshIcons();
 }
 
@@ -464,9 +472,10 @@ async function enterAuthenticatedApp(session) {
       roleFilter.insertAdjacentHTML("afterend", `<button class="ghost" id="logoutBtn" data-action="logout" title="Đăng xuất" aria-label="Đăng xuất"><i data-lucide="log-out"></i></button>`);
     }
   }
-  closeModal();
   await loadData();
   render();
+  closeModal();
+  finishAuthBootstrap({ revealApp: true });
   refreshIcons();
 }
 
@@ -4715,6 +4724,8 @@ async function init() {
     await enterAuthenticatedApp(session);
   } catch (error) {
     app.innerHTML = `<div class="empty">Không tải được dữ liệu: ${esc(error.message)}</div>`;
+    closeModal();
+    finishAuthBootstrap({ revealApp: true });
   }
 }
 

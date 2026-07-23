@@ -202,6 +202,7 @@ test("login screen fully covers the app on desktop and mobile", async ({ page })
     await expect(page.locator(".auth-screen")).toBeVisible();
     await expect(page.locator(".auth-brand-lockup")).toBeVisible();
     await expect(page.locator("#authLoginForm")).toBeVisible();
+    await expect(page.locator("#appShell")).toBeHidden();
     await expect(page.locator(".auth-form-panel")).toContainText("mật khẩu mặc định do Admin / Chủ cung cấp");
     await expect(page.locator(".auth-form-panel")).not.toContainText("Gg1234");
     await expect(page.locator("[data-action='reset-auth-password']")).toHaveCount(0);
@@ -234,11 +235,27 @@ test("login screen fully covers the app on desktop and mobile", async ({ page })
   }
 });
 
+test("HTML ban đầu hiển thị đăng nhập và không để lộ Dashboard trước khi JavaScript chạy", async ({ browser }) => {
+  const context = await browser.newContext({
+    javaScriptEnabled: false,
+    viewport: { width: 1440, height: 900 },
+  });
+  const page = await context.newPage();
+  await page.goto(process.env.BASE_URL || "http://localhost:4173", { waitUntil: "domcontentloaded" });
+
+  await expect(page.locator("#authBootScreen")).toBeVisible();
+  await expect(page.locator("#authLoginForm")).toBeVisible();
+  await expect(page.locator("#appShell")).toBeHidden();
+
+  await context.close();
+});
+
 test("màn hình bắt buộc đổi mật khẩu che toàn bộ ứng dụng", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(process.env.BASE_URL || "http://localhost:4173", { waitUntil: "networkidle" });
   await page.evaluate(() => window.showRequiredPasswordChange());
   await expect(page.locator("#requiredPasswordChangeForm")).toBeVisible();
+  await expect(page.locator("#appShell")).toBeHidden();
   await expect(page.getByRole("heading", { name: "Đặt mật khẩu mới" })).toBeVisible();
   await expect(page.locator("#requiredPasswordChangeForm input[name='password']")).toHaveAttribute("minlength", "8");
   const coverage = await page.locator(".auth-backdrop").evaluate((backdrop) => {
