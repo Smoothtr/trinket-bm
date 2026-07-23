@@ -129,6 +129,15 @@ test("tài khoản dùng mật khẩu mặc định chỉ được gọi API đ�
   )), 403);
 });
 
+test("mọi tài khoản có role hợp lệ đều có thể chủ động đổi mật khẩu", () => {
+  for (const role of ["admin", "sale", "ops", "accounting"]) {
+    assert.equal(statusCode(() => authorizeApiRequest(
+      request(role, "POST"),
+      "/api/auth/change-password",
+    )), 200);
+  }
+});
+
 test("backend dùng Custom Claims hiện hành và chặn ngay tài khoản đã khóa", () => {
   assert.equal(roleFromCurrentUserRecord({ disabled: false, customClaims: { role: "sale" } }), "sale");
   assert.throws(

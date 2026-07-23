@@ -124,7 +124,7 @@ Vai trò:
 - `ops`: sản phẩm, tồn kho, nguồn hàng, giao vận; trong deal chỉ đổi trạng thái và phí giao.
 - `accounting`: chi phí và thanh toán; được xem dữ liệu tài chính.
 
-Mật khẩu mặc định dùng chung là `Gg1234`. Nhân viên đăng nhập lần đầu chỉ thấy màn hình bắt buộc đổi mật khẩu; mật khẩu mới phải có ít nhất 8 ký tự, gồm chữ hoa, chữ thường và chữ số. Admin có thể reset một tài khoản về `Gg1234`; hệ thống đồng thời bật lại `mustChangePassword`, thu hồi refresh token và buộc người dùng đổi mật khẩu ở lần đăng nhập kế tiếp. Mật khẩu mới không được lưu vào hồ sơ hoặc Audit log.
+Mật khẩu mặc định dùng chung là `Gg1234`. Nhân viên đăng nhập lần đầu chỉ thấy màn hình bắt buộc đổi mật khẩu; mật khẩu mới phải có ít nhất 8 ký tự, gồm chữ hoa, chữ thường và chữ số. Người dùng cũng có thể chọn **Đổi mật khẩu** ngay tại màn hình đăng nhập, nhập email, mật khẩu hiện tại và mật khẩu mới; backend chỉ chấp nhận yêu cầu trong vòng 5 phút sau khi Firebase xác thực lại. Admin có thể reset một tài khoản về `Gg1234`; hệ thống đồng thời bật lại `mustChangePassword`, thu hồi refresh token và buộc người dùng đổi mật khẩu ở lần đăng nhập kế tiếp. Mật khẩu mới không được lưu vào hồ sơ hoặc Audit log.
 
 ## Giá vốn và ảnh sản phẩm trong deal
 

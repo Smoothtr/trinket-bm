@@ -205,6 +205,15 @@ test("login screen fully covers the app on desktop and mobile", async ({ page })
     await expect(page.locator(".auth-form-panel")).toContainText("mật khẩu mặc định do Admin / Chủ cung cấp");
     await expect(page.locator(".auth-form-panel")).not.toContainText("Gg1234");
     await expect(page.locator("[data-action='reset-auth-password']")).toHaveCount(0);
+    await expect(page.locator("[data-action='open-login-password-change']")).toBeVisible();
+    await page.locator("[data-action='open-login-password-change']").click();
+    await expect(page.locator("#loginPasswordChangeForm")).toBeVisible();
+    await expect(page.locator("#loginPasswordChangeForm input[name='email']")).toHaveAttribute("type", "email");
+    await expect(page.locator("#loginPasswordChangeForm input[name='current_password']")).toBeVisible();
+    await expect(page.locator("#loginPasswordChangeForm input[name='password']")).toHaveAttribute("minlength", "8");
+    await expect(page.locator("#loginPasswordChangeForm input[name='password_confirm']")).toHaveAttribute("minlength", "8");
+    await page.locator("[data-action='back-to-login']").click();
+    await expect(page.locator("#authLoginForm")).toBeVisible();
     const coverage = await page.locator(".auth-backdrop").evaluate((backdrop) => {
       const rect = backdrop.getBoundingClientRect();
       const style = getComputedStyle(backdrop);

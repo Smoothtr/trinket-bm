@@ -87,7 +87,14 @@ class FakeAuth {
 }
 
 function actor(uid = "admin-1") {
-  return { uid, email: `${uid}@trinket.test`, name: "Admin", role: "admin" };
+  return {
+    uid,
+    email: `${uid}@trinket.test`,
+    name: "Admin",
+    role: "admin",
+    authenticatedAt: Date.now(),
+    local: false,
+  };
 }
 
 function state(users = []) {
@@ -327,4 +334,41 @@ test("người dùng bắt buộc đổi mật khẩu có thể đặt mật kh�
   assert.equal(JSON.stringify(data.audit_logs).includes("MatKhauMoi2026"), false);
   assert.throws(() => validateNewPassword(DEFAULT_ACCOUNT_PASSWORD), (error) => error.code === "default-password-reused");
   assert.throws(() => validateNewPassword("matkhaumoi"), (error) => error.code === "weak-password");
+});
+
+test("người dùng đã hoạt động có thể chủ động đổi mật khẩu sau khi đăng nhập lại", async () => {
+  const auth = new FakeAuth([firebaseUser("sale-1", "sale@example.com", "sale")]);
+  const data = state([{
+    uid: "sale-1",
+    firebaseUid: "sale-1",
+    email: "sale@example.com",
+    display_name: "Sale",
+    role: "sale",
+    status: "active",
+    must_change_password: false,
+  }]);
+  const currentActor = { ...actor("sale-1"), role: "sale", mustChangePassword: false };
+
+  await manager(auth).changeOwnPassword(data, currentActor, { password: "MatKhauMoi2027" });
+
+  assert.equal(auth.users.get("sale-1").password, "MatKhauMoi2027");
+  assert.deepEqual(auth.users.get("sale-1").customClaims, { role: "sale", mustChangePassword: false });
+  assert.ok(auth.revoked.includes("sale-1"));
+  assert.deepEqual(data.audit_logs.map((log) => log.action), ["user.password_changed"]);
+  assert.equal(JSON.stringify(data.audit_logs).includes("MatKhauMoi2027"), false);
+});
+
+test("đổi mật khẩu chủ động yêu cầu phiên đăng nhập mới trong vòng 5 phút", async () => {
+  const auth = new FakeAuth([firebaseUser("sale-1", "sale@example.com", "sale")]);
+  const currentActor = {
+    ...actor("sale-1"),
+    role: "sale",
+    authenticatedAt: Date.now() - (6 * 60 * 1000),
+  };
+
+  await assert.rejects(
+    manager(auth).changeOwnPassword(state(), currentActor, { password: "MatKhauMoi2027" }),
+    (error) => error.statusCode === 401 && error.code === "recent-login-required",
+  );
+  assert.equal(auth.users.get("sale-1").password, undefined);
 });

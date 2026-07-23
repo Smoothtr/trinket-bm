@@ -351,6 +351,7 @@ function showLogin(message = "") {
           </form>
           <div class="auth-actions">
             <button class="primary auth-submit" type="submit" form="authLoginForm"><i data-lucide="log-in"></i><span>Đăng nhập</span></button>
+            <button class="auth-forgot" type="button" data-action="open-login-password-change"><i data-lucide="key-round"></i><span>Đổi mật khẩu</span></button>
           </div>
           <p class="auth-help">Tài khoản mới hoặc vừa được reset sử dụng mật khẩu mặc định do Admin / Chủ cung cấp. Nếu quên mật khẩu, vui lòng liên hệ Admin / Chủ.</p>
         </div>
@@ -390,6 +391,46 @@ function showRequiredPasswordChange(message = "") {
           <div class="auth-actions">
             <button class="primary auth-submit" type="submit" form="requiredPasswordChangeForm"><i data-lucide="key-round"></i><span>Đổi mật khẩu</span></button>
             <button class="auth-forgot" type="button" data-action="logout"><span>Đăng xuất</span></button>
+          </div>
+        </div>
+      </section>
+    </div>
+  `;
+  refreshIcons();
+}
+
+function showLoginPasswordChange(message = "", email = "") {
+  modalHost.innerHTML = `
+    <div class="modal-backdrop auth-backdrop">
+      <section class="modal auth-screen" role="dialog" aria-modal="true" aria-label="Đổi mật khẩu tài khoản" data-auth-lock="true">
+        <div class="auth-brand-panel">
+          <div class="auth-brand-lockup">
+            <span class="auth-brand-mark" aria-hidden="true">T</span>
+            <span><strong>Trinket</strong><small>Business Manager</small></span>
+          </div>
+          <div class="auth-brand-copy">
+            <p class="eyebrow">Bảo mật tài khoản</p>
+            <h1>Đổi mật khẩu chủ động và an toàn.</h1>
+            <p>Hệ thống sẽ xác thực mật khẩu hiện tại trước khi cập nhật mật khẩu mới.</p>
+          </div>
+          <p class="auth-security-note"><i data-lucide="shield-check"></i><span>Mật khẩu không được lưu vào hồ sơ hoặc Audit log</span></p>
+        </div>
+        <div class="auth-form-panel">
+          <div class="auth-form-header">
+            <p class="eyebrow">Tài khoản Trinket</p>
+            <h2>Đổi mật khẩu</h2>
+            <p>Mật khẩu mới cần ít nhất 8 ký tự, gồm chữ hoa, chữ thường và chữ số.</p>
+          </div>
+          <form id="loginPasswordChangeForm" class="form-grid auth-form">
+            <div class="field full"><label>Email</label><input name="email" type="email" autocomplete="username" value="${esc(email)}" required></div>
+            <div class="field full"><label>Mật khẩu hiện tại</label><input name="current_password" type="password" autocomplete="current-password" required></div>
+            <div class="field full"><label>Mật khẩu mới</label><input name="password" type="password" autocomplete="new-password" minlength="8" required></div>
+            <div class="field full"><label>Nhập lại mật khẩu mới</label><input name="password_confirm" type="password" autocomplete="new-password" minlength="8" required></div>
+            ${message ? `<div class="field full auth-message">${esc(message)}</div>` : ""}
+          </form>
+          <div class="auth-actions">
+            <button class="primary auth-submit" type="submit" form="loginPasswordChangeForm"><i data-lucide="key-round"></i><span>Cập nhật mật khẩu</span></button>
+            <button class="auth-forgot" type="button" data-action="back-to-login"><i data-lucide="arrow-left"></i><span>Quay lại đăng nhập</span></button>
           </div>
         </div>
       </section>
@@ -1693,7 +1734,7 @@ function auditActionLabel(action) {
     "user.disable": "Khóa tài khoản",
     "user.enable": "Mở khóa tài khoản",
     "user.password_reset": "Reset mật khẩu mặc định",
-    "user.password_changed": "Đổi mật khẩu bắt buộc",
+    "user.password_changed": "Đổi mật khẩu",
   }[action] || action;
 }
 
@@ -4415,6 +4456,34 @@ function bindShell() {
       }
       return;
     }
+    if (event.target.id === "loginPasswordChangeForm") {
+      event.preventDefault();
+      const submitter = document.querySelector('[type="submit"][form="loginPasswordChangeForm"]');
+      const data = new FormData(event.target);
+      const email = String(data.get("email") || "").trim().toLowerCase();
+      const currentPassword = String(data.get("current_password") || "");
+      const password = String(data.get("password") || "");
+      const confirmation = String(data.get("password_confirm") || "");
+      if (password !== confirmation) {
+        showLoginPasswordChange("Hai ô mật khẩu mới chưa trùng nhau.", email);
+        return;
+      }
+      if (submitter) submitter.disabled = true;
+      try {
+        await window.TrinketFirebase.signIn(email, currentPassword);
+        await api("/api/auth/change-password", { method: "POST", body: { password } });
+        await window.TrinketFirebase.signOut();
+        state.data = null;
+        state.session = null;
+        showLogin("Đổi mật khẩu thành công. Vui lòng đăng nhập bằng mật khẩu mới.");
+      } catch (error) {
+        await window.TrinketFirebase.signOut().catch(() => {});
+        showLoginPasswordChange(error.message || "Không thể đổi mật khẩu.", email);
+      } finally {
+        if (submitter?.isConnected) submitter.disabled = false;
+      }
+      return;
+    }
     if (event.target.id === "requiredPasswordChangeForm") {
       event.preventDefault();
       const submitter = document.querySelector('[type="submit"][form="requiredPasswordChangeForm"]');
@@ -4472,6 +4541,11 @@ function bindShell() {
         state.session = null;
         document.querySelector("#logoutBtn")?.remove();
         showLogin("Bạn đã đăng xuất.");
+      }
+      if (action === "open-login-password-change") showLoginPasswordChange();
+      if (action === "back-to-login") {
+        await window.TrinketFirebase.signOut().catch(() => {});
+        showLogin();
       }
       if (action === "clear-search") {
         state.search = "";
