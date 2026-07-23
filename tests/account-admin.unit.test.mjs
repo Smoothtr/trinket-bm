@@ -262,6 +262,44 @@ test("khi còn Admin khác có thể đổi role và khóa; phiên cũ bị thu 
   assert.ok(data.audit_logs.some((log) => log.action === "user.enable"));
 });
 
+test("Admin xóa tài khoản nhân viên khỏi Firebase và hồ sơ nhưng giữ dữ liệu nghiệp vụ", async () => {
+  const auth = new FakeAuth([
+    firebaseUser("admin-1", "owner@example.com", "admin"),
+    firebaseUser("sale-1", "sale@example.com", "sale"),
+  ]);
+  const data = state([
+    { uid: "admin-1", email: "owner@example.com", display_name: "Chủ shop", role: "admin", status: "active" },
+    { uid: "sale-1", email: "sale@example.com", display_name: "Lan Sale", role: "sale", status: "active" },
+  ]);
+  data.orders = [{ id: "order-1", created_by: "sale-1" }];
+
+  const result = await manager(auth).remove(data, actor(), "sale-1");
+
+  assert.deepEqual(result, { ok: true });
+  assert.equal(auth.users.has("sale-1"), false);
+  assert.deepEqual(auth.deleted, ["sale-1"]);
+  assert.ok(auth.revoked.includes("sale-1"));
+  assert.equal(data.users.some((profile) => profile.uid === "sale-1"), false);
+  assert.deepEqual(data.orders, [{ id: "order-1", created_by: "sale-1" }]);
+  assert.deepEqual(data.audit_logs.map((log) => log.action), ["user.delete"]);
+  assert.equal(data.audit_logs[0].changes.target_email, "sale@example.com");
+});
+
+test("không thể tự xóa hoặc xóa Admin hoạt động cuối cùng", async () => {
+  const auth = new FakeAuth([firebaseUser("admin-1", "owner@example.com", "admin")]);
+  const service = manager(auth);
+
+  await assert.rejects(
+    service.remove(state(), actor(), "admin-1"),
+    (error) => error.statusCode === 409 && error.code === "cannot-delete-self",
+  );
+  await assert.rejects(
+    service.remove(state(), actor("admin-2"), "admin-1"),
+    (error) => error.statusCode === 409 && error.code === "last-admin",
+  );
+  assert.equal(auth.users.has("admin-1"), true);
+});
+
 test("danh sách hỗ trợ tìm kiếm, lọc và phân trang, không trả trường nhạy cảm", async () => {
   const auth = new FakeAuth([
     firebaseUser("admin-1", "owner@example.com", "admin"),

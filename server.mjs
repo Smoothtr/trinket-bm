@@ -1191,6 +1191,11 @@ async function routeApi(req, res, pathname, searchParams) {
   }
 
   const adminUserMatch = pathname.match(/^\/api\/admin\/users\/([^/]+)$/);
+  if (req.method === "DELETE" && adminUserMatch) {
+    const result = await accountManager().remove(data, req.user, decodeURIComponent(adminUserMatch[1]));
+    json(res, 200, result);
+    return;
+  }
   if (req.method === "PATCH" && adminUserMatch) {
     const result = await accountManager().update(data, req.user, decodeURIComponent(adminUserMatch[1]), await readBody(req));
     json(res, 200, result);

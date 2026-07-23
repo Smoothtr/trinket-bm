@@ -250,6 +250,31 @@ test("HTML ban đầu hiển thị đăng nhập và không để lộ Dashboard
   await context.close();
 });
 
+test("refresh khi đã có phiên chỉ hiện trạng thái khôi phục, không hiện form đăng nhập", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  await page.addInitScript(() => localStorage.setItem("trinket.auth.session", "1"));
+  let releaseConfiguration;
+  let markConfigurationRequested;
+  const configurationRequested = new Promise((resolve) => { markConfigurationRequested = resolve; });
+  await page.route("**/api/firebase-config", async (route) => {
+    markConfigurationRequested();
+    await new Promise((resolve) => { releaseConfiguration = resolve; });
+    await route.continue();
+  });
+
+  await page.goto(process.env.BASE_URL || "http://localhost:4173", { waitUntil: "domcontentloaded" });
+  await configurationRequested;
+  await expect(page.locator(".auth-session-loader")).toBeVisible();
+  await expect(page.locator("#authLoginForm")).toBeHidden();
+  await expect(page.locator("#appShell")).toBeHidden();
+
+  releaseConfiguration();
+  await expect(page.locator("#appShell")).toBeVisible();
+  await expect(page.locator("#authBootScreen")).toHaveCount(0);
+  await context.close();
+});
+
 test("màn hình bắt buộc đổi mật khẩu che toàn bộ ứng dụng", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(process.env.BASE_URL || "http://localhost:4173", { waitUntil: "networkidle" });
@@ -271,6 +296,7 @@ test("quản lý tài khoản responsive và không tràn ngang trên mobile", a
   await page.locator(".nav-item[data-view='settings']").click();
   await page.locator("[data-action='set-settings-tab'][data-tab='accounts']").click();
   await expect(page.locator(".accounts-table tbody tr").first()).toBeVisible();
+  await expect(page.locator("[data-action='delete-admin-user']").first()).toBeVisible();
   const overflows = await page.locator(".account-panel").evaluate((panel) => panel.scrollWidth > panel.clientWidth + 1);
   expect(overflows).toBeFalsy();
   await page.locator("[data-action='new-admin-user']").first().click();

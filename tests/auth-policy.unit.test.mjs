@@ -102,6 +102,7 @@ test("mọi API quản lý tài khoản đều chỉ dành cho Admin", () => {
     ["/api/admin/users", "GET"],
     ["/api/admin/users", "POST"],
     ["/api/admin/users/user-1", "PATCH"],
+    ["/api/admin/users/user-1", "DELETE"],
     ["/api/admin/users/user-1/disable", "POST"],
     ["/api/admin/users/user-1/enable", "POST"],
     ["/api/admin/users/user-1/reset-password", "POST"],

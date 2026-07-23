@@ -4,9 +4,20 @@ const toastHost = document.querySelector("#toastHost");
 const viewTitle = document.querySelector("#viewTitle");
 const appShell = document.querySelector("#appShell");
 const DEFAULT_ACCOUNT_PASSWORD = "Gg1234";
+const AUTH_SESSION_HINT_KEY = "trinket.auth.session";
+
+function setAuthSessionHint(active) {
+  try {
+    if (active) localStorage.setItem(AUTH_SESSION_HINT_KEY, "1");
+    else localStorage.removeItem(AUTH_SESSION_HINT_KEY);
+  } catch (error) {
+    // The Firebase session remains authoritative when local storage is unavailable.
+  }
+}
 
 function finishAuthBootstrap({ revealApp = false } = {}) {
   document.documentElement.classList.toggle("auth-pending", !revealApp);
+  document.documentElement.classList.remove("auth-session-pending");
   appShell?.setAttribute("aria-hidden", revealApp ? "false" : "true");
 }
 
@@ -329,6 +340,7 @@ async function authenticatedResource(path, { downloadName = "" } = {}) {
 }
 
 function showLogin(message = "") {
+  setAuthSessionHint(false);
   modalHost.innerHTML = `
     <div class="modal-backdrop auth-backdrop">
       <section class="modal auth-screen" role="dialog" aria-modal="true" aria-label="Đăng nhập Trinket" data-auth-lock="true">
@@ -454,6 +466,7 @@ function roleDisplayName(role) {
 async function enterAuthenticatedApp(session) {
   state.session = session;
   if (session.enabled && session.mustChangePassword) {
+    setAuthSessionHint(true);
     showRequiredPasswordChange();
     return;
   }
@@ -463,6 +476,7 @@ async function enterAuthenticatedApp(session) {
     return;
   }
   if (session.enabled) {
+    setAuthSessionHint(true);
     state.role = session.role;
     const roleFilter = document.querySelector("#roleFilter");
     roleFilter.value = session.role;
@@ -471,6 +485,8 @@ async function enterAuthenticatedApp(session) {
     if (!document.querySelector("#logoutBtn")) {
       roleFilter.insertAdjacentHTML("afterend", `<button class="ghost" id="logoutBtn" data-action="logout" title="Đăng xuất" aria-label="Đăng xuất"><i data-lucide="log-out"></i></button>`);
     }
+  } else {
+    setAuthSessionHint(false);
   }
   await loadData();
   render();
@@ -1744,6 +1760,7 @@ function auditActionLabel(action) {
     "user.enable": "Mở khóa tài khoản",
     "user.password_reset": "Reset mật khẩu mặc định",
     "user.password_changed": "Đổi mật khẩu",
+    "user.delete": "Xóa tài khoản",
   }[action] || action;
 }
 
@@ -1787,6 +1804,7 @@ function renderAccountRows(users) {
             ? `<button class="ghost" data-action="enable-admin-user" data-user-id="${esc(user.uid)}" title="Mở khóa tài khoản" aria-label="Mở khóa ${esc(user.email)}"><i data-lucide="lock-open"></i></button>`
             : `<button class="ghost danger-soft" data-action="disable-admin-user" data-user-id="${esc(user.uid)}" title="${user.uid === state.session?.user?.uid ? "Không thể tự khóa tài khoản đang đăng nhập" : "Khóa tài khoản"}" aria-label="Khóa ${esc(user.email)}" ${user.uid === state.session?.user?.uid ? "disabled" : ""}><i data-lucide="lock-keyhole"></i></button>`}
           <button class="ghost" data-action="reset-admin-password" data-user-id="${esc(user.uid)}" title="Reset về mật khẩu mặc định ${DEFAULT_ACCOUNT_PASSWORD}" aria-label="Reset mật khẩu cho ${esc(user.email)}"><i data-lucide="key-round"></i></button>
+          <button class="ghost danger-soft" data-action="delete-admin-user" data-user-id="${esc(user.uid)}" title="${user.uid === state.session?.user?.uid ? "Không thể tự xóa tài khoản đang đăng nhập" : "Xóa tài khoản"}" aria-label="Xóa ${esc(user.email)}" ${user.uid === state.session?.user?.uid ? "disabled" : ""}><i data-lucide="trash-2"></i></button>
         </div>
       </td>
     </tr>
@@ -2038,6 +2056,19 @@ async function resetAdminPassword(userId) {
   }
   await refreshAccountsAfterMutation();
   toast(result.warning || `Đã reset mật khẩu về ${DEFAULT_ACCOUNT_PASSWORD}.`);
+}
+
+async function deleteAdminUser(userId) {
+  const user = state.accountUsers?.users?.find((item) => item.uid === userId);
+  if (!user) throw new Error("Không tìm thấy tài khoản.");
+  if (user.uid === state.session?.user?.uid) throw new Error("Bạn không thể tự xóa tài khoản đang đăng nhập.");
+  const confirmed = window.confirm(
+    `Xóa vĩnh viễn tài khoản đăng nhập ${user.email}? Người dùng sẽ bị đăng xuất và không thể đăng nhập lại. Deal, dữ liệu nghiệp vụ và Audit log vẫn được giữ.`,
+  );
+  if (!confirmed) return;
+  const result = await api(`/api/admin/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
+  await refreshAccountsAfterMutation();
+  toast(result.warning || "Đã xóa tài khoản.");
 }
 
 function render() {
@@ -4686,6 +4717,7 @@ function bindShell() {
       if (action === "disable-admin-user") await setAdminUserDisabled(actionTarget.dataset.userId, true);
       if (action === "enable-admin-user") await setAdminUserDisabled(actionTarget.dataset.userId, false);
       if (action === "reset-admin-password") await resetAdminPassword(actionTarget.dataset.userId);
+      if (action === "delete-admin-user") await deleteAdminUser(actionTarget.dataset.userId);
       if (action === "admin-users-page") await loadAdminUsers({ page: Number(actionTarget.dataset.page || 1) });
       if (action === "new-product") openProductEditor();
       if (action === "edit-product") openProductEditor(actionTarget.dataset.productId);
@@ -4723,6 +4755,7 @@ async function init() {
     }
     await enterAuthenticatedApp(session);
   } catch (error) {
+    setAuthSessionHint(false);
     app.innerHTML = `<div class="empty">Không tải được dữ liệu: ${esc(error.message)}</div>`;
     closeModal();
     finishAuthBootstrap({ revealApp: true });

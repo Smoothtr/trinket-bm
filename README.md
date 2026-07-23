@@ -62,7 +62,7 @@ Sau khi đăng nhập đúng Vercel team/project đang sở hữu `trinket-bm.gg
 
 Ứng dụng dùng `@vercel/oidc` và `google-auth-library` để đổi token ngắn hạn lấy quyền service account. Không cần và không nên tạo `FIREBASE_SERVICE_ACCOUNT_JSON`.
 
-API Quản lý tài khoản cần các permission `firebaseauth.users.get`, `firebaseauth.users.create`, `firebaseauth.users.update` và `firebaseauth.users.delete` (delete chỉ dùng để rollback một lần tạo hồ sơ bị lỗi, giao diện không có chức năng xóa). Production đang dùng custom IAM role `trinketFirebaseUserManager` chỉ gồm bốn permission này; không cấp role `roles/firebaseauth.admin` rộng.
+API Quản lý tài khoản cần các permission `firebaseauth.users.get`, `firebaseauth.users.create`, `firebaseauth.users.update` và `firebaseauth.users.delete`. Quyền delete được dùng cho rollback khi tạo hồ sơ lỗi và thao tác xóa tài khoản có xác nhận của Admin. Production đang dùng custom IAM role `trinketFirebaseUserManager` chỉ gồm bốn permission này; không cấp role `roles/firebaseauth.admin` rộng.
 
 ## Biến môi trường Vercel
 
@@ -106,7 +106,7 @@ npm run firebase:migrate -- --source=C:\backup.json --force --confirm=OVERWRITE_
 
 ## Tạo tài khoản và gán quyền
 
-Trong ứng dụng, đăng nhập bằng Admin / Chủ, mở **Cấu hình → Quản lý tài khoản → Tạo tài khoản**. Admin nhập hồ sơ và chọn một trong bốn role hiện có. Tài khoản mới nhận mật khẩu mặc định `Gg1234` và Custom Claim `mustChangePassword=true`; backend chặn mọi API nghiệp vụ cho đến khi nhân viên đổi sang mật khẩu riêng.
+Trong ứng dụng, đăng nhập bằng Admin / Chủ, mở **Cấu hình → Quản lý tài khoản → Tạo tài khoản**. Admin nhập hồ sơ và chọn một trong bốn role hiện có. Tài khoản mới nhận mật khẩu mặc định `Gg1234` và Custom Claim `mustChangePassword=true`; backend chặn mọi API nghiệp vụ cho đến khi nhân viên đổi sang mật khẩu riêng. Admin cũng có thể xóa tài khoản đăng nhập; hệ thống chặn tự xóa và chặn xóa Admin hoạt động cuối cùng, đồng thời vẫn giữ deal, dữ liệu nghiệp vụ và Audit log.
 
 API dùng collection `users` làm hồ sơ nhân viên và Firebase Custom Claim `role` làm nguồn quyền thực thi. Mỗi request backend đọc Custom Claims hiện hành từ Firebase, do đó quyền cũ không tiếp tục được tin cậy. Khi đổi role hoặc khóa tài khoản, refresh token cũng bị thu hồi.
 
