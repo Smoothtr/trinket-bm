@@ -20,6 +20,7 @@
         enabled: false,
         user: { uid: "local-admin", email: "local@trinket.test", displayName: "Local Admin" },
         role: "admin",
+        mustChangePassword: false,
       };
       return runtime;
     }
@@ -43,11 +44,13 @@
     });
 
     let role = "";
+    let mustChangePassword = false;
     if (user) {
       const tokenResult = await user.getIdTokenResult();
       role = String(tokenResult.claims.role || "");
+      mustChangePassword = Boolean(tokenResult.claims.mustChangePassword);
     }
-    runtime = { enabled: true, firebaseApp, auth, storage, user, role };
+    runtime = { enabled: true, firebaseApp, auth, storage, user, role, mustChangePassword };
     return runtime;
   }
 
@@ -57,9 +60,11 @@
     const user = current.auth.currentUser;
     current.user = user;
     current.role = "";
+    current.mustChangePassword = false;
     if (user) {
       const tokenResult = await user.getIdTokenResult(force);
       current.role = String(tokenResult.claims.role || "");
+      current.mustChangePassword = Boolean(tokenResult.claims.mustChangePassword);
     }
     return current;
   }
@@ -82,12 +87,6 @@
     const current = await initialize();
     if (current.enabled) await authModule.signOut(current.auth);
     return refreshSession();
-  }
-
-  async function resetPassword(email) {
-    const current = await initialize();
-    if (!current.enabled) return;
-    await authModule.sendPasswordResetEmail(current.auth, email);
   }
 
   async function uploadProductImage(file, path, onProgress = () => {}) {
@@ -131,7 +130,6 @@
     initialize,
     productImageUrl,
     refreshSession,
-    resetPassword,
     signIn,
     signOut,
     uploadProductImage,

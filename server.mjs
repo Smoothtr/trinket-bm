@@ -12,7 +12,6 @@ import {
 import {
   createAccountManager,
   createLocalAuthAdapter,
-  sendFirebasePasswordResetEmail,
 } from "./lib/account-admin.mjs";
 import { getFirebaseServices } from "./lib/firebase-admin.mjs";
 import { createStore } from "./lib/store.mjs";
@@ -1165,8 +1164,13 @@ async function routeApi(req, res, pathname, searchParams) {
   const accountManager = () => createAccountManager({
     auth: req.user.local ? createLocalAuthAdapter(data, req.user) : getFirebaseServices().auth,
     persist: writeStore,
-    sendPasswordEmail: req.user.local ? null : sendFirebasePasswordResetEmail,
   });
+
+  if (req.method === "POST" && pathname === "/api/auth/change-password") {
+    const result = await accountManager().changeOwnPassword(data, req.user, await readBody(req));
+    json(res, 200, result);
+    return;
+  }
 
   if (req.method === "GET" && pathname === "/api/admin/users") {
     const result = await accountManager().list(data, {
@@ -1205,9 +1209,9 @@ async function routeApi(req, res, pathname, searchParams) {
     return;
   }
 
-  const passwordLinkMatch = pathname.match(/^\/api\/admin\/users\/([^/]+)\/send-password-link$/);
-  if (req.method === "POST" && passwordLinkMatch) {
-    const result = await accountManager().sendPasswordLink(data, req.user, decodeURIComponent(passwordLinkMatch[1]));
+  const passwordResetMatch = pathname.match(/^\/api\/admin\/users\/([^/]+)\/reset-password$/);
+  if (req.method === "POST" && passwordResetMatch) {
+    const result = await accountManager().resetPassword(data, req.user, decodeURIComponent(passwordResetMatch[1]));
     json(res, 200, result);
     return;
   }

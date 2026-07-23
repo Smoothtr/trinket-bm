@@ -2,6 +2,7 @@
 const modalHost = document.querySelector("#modalHost");
 const toastHost = document.querySelector("#toastHost");
 const viewTitle = document.querySelector("#viewTitle");
+const DEFAULT_ACCOUNT_PASSWORD = "Gg1234";
 
 function closeModal() {
   const orderForm = modalHost.querySelector(".order-editor-form");
@@ -350,9 +351,46 @@ function showLogin(message = "") {
           </form>
           <div class="auth-actions">
             <button class="primary auth-submit" type="submit" form="authLoginForm"><i data-lucide="log-in"></i><span>Đăng nhập</span></button>
-            <button class="auth-forgot" type="button" data-action="reset-auth-password">Quên mật khẩu?</button>
           </div>
-          <p class="auth-help">Nếu chưa có tài khoản, vui lòng liên hệ Admin / Chủ.</p>
+          <p class="auth-help">Tài khoản mới hoặc vừa được Admin reset sử dụng mật khẩu mặc định <strong>${DEFAULT_ACCOUNT_PASSWORD}</strong>. Nếu quên mật khẩu, vui lòng liên hệ Admin / Chủ.</p>
+        </div>
+      </section>
+    </div>
+  `;
+  refreshIcons();
+}
+
+function showRequiredPasswordChange(message = "") {
+  modalHost.innerHTML = `
+    <div class="modal-backdrop auth-backdrop">
+      <section class="modal auth-screen" role="dialog" aria-modal="true" aria-label="Đổi mật khẩu bắt buộc" data-auth-lock="true">
+        <div class="auth-brand-panel">
+          <div class="auth-brand-lockup">
+            <span class="auth-brand-mark" aria-hidden="true">T</span>
+            <span><strong>Trinket</strong><small>Business Manager</small></span>
+          </div>
+          <div class="auth-brand-copy">
+            <p class="eyebrow">Bảo vệ tài khoản</p>
+            <h1>Tạo mật khẩu riêng trước khi bắt đầu.</h1>
+            <p>Mật khẩu mặc định chỉ dùng cho lần đăng nhập đầu tiên hoặc sau khi Admin reset tài khoản.</p>
+          </div>
+          <p class="auth-security-note"><i data-lucide="shield-check"></i><span>Mật khẩu mới không được ghi vào hồ sơ hoặc Audit log</span></p>
+        </div>
+        <div class="auth-form-panel">
+          <div class="auth-form-header">
+            <p class="eyebrow">Bắt buộc đổi mật khẩu</p>
+            <h2>Đặt mật khẩu mới</h2>
+            <p>Dùng ít nhất 8 ký tự, gồm chữ hoa, chữ thường và chữ số.</p>
+          </div>
+          <form id="requiredPasswordChangeForm" class="form-grid auth-form">
+            <div class="field full"><label>Mật khẩu mới</label><input name="password" type="password" autocomplete="new-password" minlength="8" required></div>
+            <div class="field full"><label>Nhập lại mật khẩu mới</label><input name="password_confirm" type="password" autocomplete="new-password" minlength="8" required></div>
+            ${message ? `<div class="field full auth-message">${esc(message)}</div>` : ""}
+          </form>
+          <div class="auth-actions">
+            <button class="primary auth-submit" type="submit" form="requiredPasswordChangeForm"><i data-lucide="key-round"></i><span>Đổi mật khẩu</span></button>
+            <button class="auth-forgot" type="button" data-action="logout"><span>Đăng xuất</span></button>
+          </div>
         </div>
       </section>
     </div>
@@ -366,6 +404,10 @@ function roleDisplayName(role) {
 
 async function enterAuthenticatedApp(session) {
   state.session = session;
+  if (session.enabled && session.mustChangePassword) {
+    showRequiredPasswordChange();
+    return;
+  }
   if (session.enabled && !["admin", "sale", "ops", "accounting"].includes(session.role)) {
     await window.TrinketFirebase.signOut();
     showLogin("Tài khoản chưa được cấp vai trò truy cập Trinket.");
@@ -1650,7 +1692,8 @@ function auditActionLabel(action) {
     "user.role_change": "Đổi vai trò",
     "user.disable": "Khóa tài khoản",
     "user.enable": "Mở khóa tài khoản",
-    "user.password_link_sent": "Gửi email đặt mật khẩu",
+    "user.password_reset": "Reset mật khẩu mặc định",
+    "user.password_changed": "Đổi mật khẩu bắt buộc",
   }[action] || action;
 }
 
@@ -1682,7 +1725,7 @@ function renderSettingsPermissions() {
 function renderAccountRows(users) {
   return users.map((user) => `
     <tr>
-      <td data-label="Họ và tên"><strong>${esc(user.display_name || "Chưa cập nhật")}</strong>${user.invitation_status === "failed" ? `<br><span class="small negative">Chưa gửi được email mời</span>` : ""}</td>
+      <td data-label="Họ và tên"><strong>${esc(user.display_name || "Chưa cập nhật")}</strong>${user.must_change_password ? `<br><span class="small muted">Chờ đổi mật khẩu</span>` : ""}</td>
       <td data-label="Email">${esc(user.email)}</td>
       <td data-label="Vai trò">${accountRoleBadge(user.role)}</td>
       <td data-label="Trạng thái">${accountStatusBadge(user.status)}</td>
@@ -1693,7 +1736,7 @@ function renderAccountRows(users) {
           ${user.status === "disabled"
             ? `<button class="ghost" data-action="enable-admin-user" data-user-id="${esc(user.uid)}" title="Mở khóa tài khoản" aria-label="Mở khóa ${esc(user.email)}"><i data-lucide="lock-open"></i></button>`
             : `<button class="ghost danger-soft" data-action="disable-admin-user" data-user-id="${esc(user.uid)}" title="${user.uid === state.session?.user?.uid ? "Không thể tự khóa tài khoản đang đăng nhập" : "Khóa tài khoản"}" aria-label="Khóa ${esc(user.email)}" ${user.uid === state.session?.user?.uid ? "disabled" : ""}><i data-lucide="lock-keyhole"></i></button>`}
-          <button class="ghost" data-action="send-admin-password-link" data-user-id="${esc(user.uid)}" title="${user.invitation_status === "sent" ? "Gửi email đặt lại mật khẩu" : "Gửi email thiết lập mật khẩu"}" aria-label="Gửi email đặt mật khẩu cho ${esc(user.email)}" ${user.status === "disabled" ? "disabled" : ""}><i data-lucide="mail"></i></button>
+          <button class="ghost" data-action="reset-admin-password" data-user-id="${esc(user.uid)}" title="Reset về mật khẩu mặc định ${DEFAULT_ACCOUNT_PASSWORD}" aria-label="Reset mật khẩu cho ${esc(user.email)}"><i data-lucide="key-round"></i></button>
         </div>
       </td>
     </tr>
@@ -1709,7 +1752,7 @@ function renderSettingsAccounts() {
   return `
     <section class="panel account-panel">
       <div class="panel-header">
-        <div><h2>Quản lý tài khoản</h2><p class="muted small">Tạo nhân viên, gán vai trò và kiểm soát quyền đăng nhập.</p></div>
+        <div><h2>Quản lý tài khoản</h2><p class="muted small">Tạo nhân viên, gán vai trò và reset mật khẩu đăng nhập.</p></div>
         <button class="primary" data-action="new-admin-user"><i data-lucide="user-plus"></i><span>Tạo tài khoản</span></button>
       </div>
       <div class="panel-body account-toolbar">
@@ -1829,7 +1872,7 @@ function openAdminUserEditor(userId = "") {
           <div>
             <p class="eyebrow">Quản lý tài khoản</p>
             <h2>${user ? "Chỉnh sửa tài khoản" : "Tạo tài khoản"}</h2>
-            <p class="muted small">${user ? "Cập nhật hồ sơ, vai trò hoặc trạng thái đăng nhập." : "Nhân viên sẽ tự thiết lập mật khẩu qua email."}</p>
+            <p class="muted small">${user ? "Cập nhật hồ sơ, vai trò hoặc trạng thái đăng nhập." : `Mật khẩu mặc định là ${DEFAULT_ACCOUNT_PASSWORD}; nhân viên phải đổi ngay lần đăng nhập đầu tiên.`}</p>
           </div>
           <button class="ghost" data-action="close-modal" aria-label="Đóng"><i data-lucide="x"></i></button>
         </div>
@@ -1844,7 +1887,7 @@ function openAdminUserEditor(userId = "") {
               <option value="disabled" ${user?.status === "disabled" ? "selected" : ""}>Đã khóa</option>
             </select></div>
           </form>
-          ${user ? `<p class="small muted account-form-note"><i data-lucide="info"></i><span>UID Firebase: ${esc(user.uid)}</span></p>` : `<p class="small muted account-form-note"><i data-lucide="mail-check"></i><span>Không có mật khẩu tạm thời và Admin không nhìn thấy mật khẩu của nhân viên.</span></p>`}
+          ${user ? `<p class="small muted account-form-note"><i data-lucide="info"></i><span>UID Firebase: ${esc(user.uid)}</span></p>` : `<p class="small muted account-form-note"><i data-lucide="key-round"></i><span>Mật khẩu mặc định: <strong>${DEFAULT_ACCOUNT_PASSWORD}</strong>. Hệ thống sẽ khóa màn hình nghiệp vụ cho tới khi nhân viên đổi mật khẩu.</span></p>`}
         </div>
         <div class="modal-footer">
           <button class="button" type="button" data-action="close-modal">Hủy</button>
@@ -1887,7 +1930,7 @@ async function saveAdminUserForm(form) {
       const result = await api("/api/admin/users", { method: "POST", body });
       closeModal();
       await refreshAccountsAfterMutation();
-      toast(result.warning || "Tạo tài khoản thành công.");
+      toast(result.warning || `Tạo tài khoản thành công. Mật khẩu mặc định: ${DEFAULT_ACCOUNT_PASSWORD}`);
       return;
     }
     const updateResult = await api(`/api/admin/users/${encodeURIComponent(userId)}`, {
@@ -1930,12 +1973,21 @@ async function setAdminUserDisabled(userId, disabled) {
   toast(disabled ? "Đã khóa tài khoản." : "Đã mở khóa tài khoản.");
 }
 
-async function sendAdminPasswordLink(userId) {
+async function resetAdminPassword(userId) {
   const user = state.accountUsers?.users?.find((item) => item.uid === userId);
   if (!user) throw new Error("Không tìm thấy tài khoản.");
-  const result = await api(`/api/admin/users/${encodeURIComponent(userId)}/send-password-link`, { method: "POST", body: {} });
+  const confirmed = window.confirm(`Reset mật khẩu của ${user.email} về ${DEFAULT_ACCOUNT_PASSWORD}? Mọi phiên đăng nhập hiện tại sẽ bị thu hồi và người dùng phải đổi mật khẩu khi đăng nhập lại.`);
+  if (!confirmed) return;
+  const result = await api(`/api/admin/users/${encodeURIComponent(userId)}/reset-password`, { method: "POST", body: {} });
+  if (result.self_reset) {
+    await window.TrinketFirebase.signOut();
+    state.data = null;
+    state.session = null;
+    showLogin(`Mật khẩu đã được reset về ${DEFAULT_ACCOUNT_PASSWORD}. Hãy đăng nhập lại và đổi mật khẩu.`);
+    return;
+  }
   await refreshAccountsAfterMutation();
-  toast(result.warning || (user.invitation_status === "sent" ? "Đã gửi email đặt lại mật khẩu." : "Đã gửi email thiết lập mật khẩu."));
+  toast(result.warning || `Đã reset mật khẩu về ${DEFAULT_ACCOUNT_PASSWORD}.`);
 }
 
 function render() {
@@ -4363,6 +4415,30 @@ function bindShell() {
       }
       return;
     }
+    if (event.target.id === "requiredPasswordChangeForm") {
+      event.preventDefault();
+      const submitter = document.querySelector('[type="submit"][form="requiredPasswordChangeForm"]');
+      const data = new FormData(event.target);
+      const password = String(data.get("password") || "");
+      const confirmation = String(data.get("password_confirm") || "");
+      if (password !== confirmation) {
+        showRequiredPasswordChange("Hai ô mật khẩu chưa trùng nhau.");
+        return;
+      }
+      if (submitter) submitter.disabled = true;
+      try {
+        await api("/api/auth/change-password", { method: "POST", body: { password } });
+        await window.TrinketFirebase.signOut();
+        state.data = null;
+        state.session = null;
+        showLogin("Đổi mật khẩu thành công. Vui lòng đăng nhập bằng mật khẩu mới.");
+      } catch (error) {
+        showRequiredPasswordChange(error.message || "Không thể đổi mật khẩu.");
+      } finally {
+        if (submitter?.isConnected) submitter.disabled = false;
+      }
+      return;
+    }
     if (event.target.id === "adminUserForm") {
       event.preventDefault();
       try {
@@ -4396,12 +4472,6 @@ function bindShell() {
         state.session = null;
         document.querySelector("#logoutBtn")?.remove();
         showLogin("Bạn đã đăng xuất.");
-      }
-      if (action === "reset-auth-password") {
-        const email = String(document.querySelector("#authLoginForm input[name='email']")?.value || "").trim();
-        if (!email) throw new Error("Nhập email trước khi yêu cầu đặt lại mật khẩu.");
-        await window.TrinketFirebase.resetPassword(email);
-        toast("Đã gửi email đặt lại mật khẩu nếu tài khoản tồn tại.");
       }
       if (action === "clear-search") {
         state.search = "";
@@ -4532,7 +4602,7 @@ function bindShell() {
       if (action === "edit-admin-user") openAdminUserEditor(actionTarget.dataset.userId);
       if (action === "disable-admin-user") await setAdminUserDisabled(actionTarget.dataset.userId, true);
       if (action === "enable-admin-user") await setAdminUserDisabled(actionTarget.dataset.userId, false);
-      if (action === "send-admin-password-link") await sendAdminPasswordLink(actionTarget.dataset.userId);
+      if (action === "reset-admin-password") await resetAdminPassword(actionTarget.dataset.userId);
       if (action === "admin-users-page") await loadAdminUsers({ page: Number(actionTarget.dataset.page || 1) });
       if (action === "new-product") openProductEditor();
       if (action === "edit-product") openProductEditor(actionTarget.dataset.productId);

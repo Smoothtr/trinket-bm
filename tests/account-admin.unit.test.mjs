@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createAccountManager,
+  DEFAULT_ACCOUNT_PASSWORD,
   normalizeEmail,
-  sendFirebasePasswordResetEmail,
   validateCreatePayload,
+  validateNewPassword,
 } from "../lib/account-admin.mjs";
 
 class FakeAuth {
@@ -93,11 +94,10 @@ function state(users = []) {
   return { users: [...users], audit_logs: [] };
 }
 
-function manager(auth, { persist, sendPasswordEmail } = {}) {
+function manager(auth, { persist } = {}) {
   return createAccountManager({
     auth,
     persist: persist || (async () => {}),
-    sendPasswordEmail: sendPasswordEmail || (async () => {}),
   });
 }
 
@@ -137,31 +137,27 @@ test("payload tạo tài khoản chuẩn hóa email và chỉ nhận bốn role 
   }), (error) => error.statusCode === 400);
 });
 
-test("Admin tạo tài khoản Sale bằng mật khẩu khởi tạo ngẫu nhiên nhưng không trả hoặc ghi mật khẩu", async () => {
+test("Admin tạo tài khoản Sale bằng mật khẩu mặc định và bắt buộc đổi lần đầu", async () => {
   const auth = new FakeAuth([firebaseUser("admin-1", "owner@example.com", "admin")]);
   const data = state();
-  const emails = [];
-  const result = await manager(auth, {
-    sendPasswordEmail: async (email) => emails.push(email),
-  }).create(data, actor(), {
+  const result = await manager(auth).create(data, actor(), {
     display_name: "  Nhân viên Sale ",
     email: " SALE@EXAMPLE.COM ",
     phone: "0909000000",
     role: "sale",
   });
 
-  assert.equal(result.invitation_sent, true);
+  assert.equal(result.default_password_applied, true);
   assert.equal(result.user.role, "sale");
   assert.equal(result.user.email, "sale@example.com");
   assert.equal(Object.hasOwn(result.user, "password"), false);
-  assert.equal(typeof auth.createdPayloads[0].password, "string");
-  assert.ok(auth.createdPayloads[0].password.length >= 32);
-  assert.deepEqual(auth.users.get(result.user.uid).customClaims, { role: "sale" });
-  assert.deepEqual(emails, ["sale@example.com"]);
+  assert.equal(auth.createdPayloads[0].password, DEFAULT_ACCOUNT_PASSWORD);
+  assert.deepEqual(auth.users.get(result.user.uid).customClaims, { role: "sale", mustChangePassword: true });
   assert.equal(data.users[0].status, "active");
-  assert.equal(data.users[0].invitation_status, "sent");
+  assert.equal(data.users[0].invitation_status, "default_password");
   assert.equal(data.users[0].password_credential_created, true);
-  assert.deepEqual(data.audit_logs.map((log) => log.action), ["user.password_link_sent", "user.create"]);
+  assert.equal(data.users[0].must_change_password, true);
+  assert.deepEqual(data.audit_logs.map((log) => log.action), ["user.create"]);
   assert.equal(data.audit_logs.some((log) => Object.keys(log.changes).some((key) => /password|token/i.test(key))), false);
   assert.equal(JSON.stringify(result).includes(auth.createdPayloads[0].password), false);
 });
@@ -210,19 +206,16 @@ test("tạo hồ sơ thất bại sẽ rollback Firebase Auth user", async () =>
   assert.equal(auth.users.has("uid-2"), false);
 });
 
-test("gửi email lỗi vẫn giữ tài khoản và đánh dấu gửi thất bại", async () => {
+test("tạo tài khoản không phụ thuộc dịch vụ email", async () => {
   const auth = new FakeAuth([firebaseUser("admin-1", "owner@example.com", "admin")]);
   const data = state();
-  const result = await manager(auth, {
-    sendPasswordEmail: async () => { throw new Error("Email provider unavailable"); },
-  }).create(data, actor(), {
+  const result = await manager(auth).create(data, actor(), {
     display_name: "Kế toán",
     email: "accounting@example.com",
     role: "accounting",
   });
-  assert.equal(result.invitation_sent, false);
-  assert.match(result.warning, /chưa gửi được email/i);
-  assert.equal(data.users[0].invitation_status, "failed");
+  assert.equal(result.default_password_applied, true);
+  assert.equal(data.users[0].invitation_status, "default_password");
   assert.equal(auth.users.has(result.user.uid), true);
 });
 
@@ -280,54 +273,58 @@ test("danh sách hỗ trợ tìm kiếm, lọc và phân trang, không trả tr�
   assert.equal(JSON.stringify(result).includes("passwordHash"), false);
 });
 
-test("email đặt mật khẩu dùng Firebase sendOobCode và không trả link nhạy cảm", async () => {
-  let request;
-  const result = await sendFirebasePasswordResetEmail(" SALE@EXAMPLE.COM ", {
-    apiKey: "public-web-key",
-    continueUrl: "https://trinket-bm.gg99.vn/",
-    fetchImpl: async (url, options) => {
-      request = { url, options, body: JSON.parse(options.body) };
-      return {
-        ok: true,
-        async json() { return { email: "sale@example.com" }; },
-      };
-    },
-  });
-  assert.match(request.url, /accounts:sendOobCode/);
-  assert.deepEqual(request.body, {
-    requestType: "PASSWORD_RESET",
-    email: "sale@example.com",
-    continueUrl: "https://trinket-bm.gg99.vn/",
-  });
-  assert.equal(request.options.headers["X-Firebase-Locale"], "vi");
-  assert.deepEqual(result, { email: "sale@example.com" });
-  assert.equal(Object.hasOwn(result, "link"), false);
-});
-
-test("gửi lại email sẽ sửa an toàn tài khoản mời cũ chưa có credential mật khẩu", async () => {
+test("Admin reset mật khẩu về mặc định, bật cờ bắt buộc đổi và thu hồi phiên cũ", async () => {
   const auth = new FakeAuth([
     firebaseUser("admin-1", "owner@example.com", "admin"),
-    firebaseUser("legacy-invite", "legacy@example.com", "sale"),
+    firebaseUser("sale-1", "sale@example.com", "sale"),
   ]);
   const data = state([{
-    uid: "legacy-invite",
-    firebaseUid: "legacy-invite",
-    email: "legacy@example.com",
-    display_name: "Legacy Invite",
+    uid: "sale-1",
+    firebaseUid: "sale-1",
+    email: "sale@example.com",
+    display_name: "Sale",
     role: "sale",
     status: "active",
-    invitation_status: "sent",
+    invitation_status: "accepted",
+    must_change_password: false,
   }]);
-  const emails = [];
 
-  const result = await manager(auth, {
-    sendPasswordEmail: async (email) => emails.push(email),
-  }).sendPasswordLink(data, actor(), "legacy-invite");
+  const result = await manager(auth).resetPassword(data, actor(), "sale-1");
+
+  assert.deepEqual(result, { ok: true, self_reset: false });
+  assert.equal(auth.users.get("sale-1").password, DEFAULT_ACCOUNT_PASSWORD);
+  assert.equal(auth.users.get("sale-1").customClaims.mustChangePassword, true);
+  assert.equal(data.users[0].password_credential_created, true);
+  assert.equal(data.users[0].must_change_password, true);
+  assert.ok(auth.revoked.includes("sale-1"));
+  assert.deepEqual(data.audit_logs.map((log) => log.action), ["user.password_reset"]);
+  assert.equal(JSON.stringify(data.audit_logs).includes(DEFAULT_ACCOUNT_PASSWORD), false);
+});
+
+test("người dùng bắt buộc đổi mật khẩu có thể đặt mật khẩu mới và cờ được gỡ bỏ", async () => {
+  const auth = new FakeAuth([{
+    ...firebaseUser("sale-1", "sale@example.com", "sale"),
+    customClaims: { role: "sale", mustChangePassword: true },
+  }]);
+  const data = state([{
+    uid: "sale-1",
+    firebaseUid: "sale-1",
+    email: "sale@example.com",
+    display_name: "Sale",
+    role: "sale",
+    status: "active",
+    must_change_password: true,
+  }]);
+  const currentActor = { ...actor("sale-1"), role: "sale", mustChangePassword: true };
+
+  const result = await manager(auth).changeOwnPassword(data, currentActor, { password: "MatKhauMoi2026" });
 
   assert.deepEqual(result, { ok: true });
-  assert.equal(typeof auth.users.get("legacy-invite").password, "string");
-  assert.ok(auth.users.get("legacy-invite").password.length >= 32);
-  assert.equal(data.users[0].password_credential_created, true);
-  assert.deepEqual(emails, ["legacy@example.com"]);
-  assert.equal(JSON.stringify(data.audit_logs).includes(auth.users.get("legacy-invite").password), false);
+  assert.equal(auth.users.get("sale-1").password, "MatKhauMoi2026");
+  assert.deepEqual(auth.users.get("sale-1").customClaims, { role: "sale", mustChangePassword: false });
+  assert.equal(data.users[0].must_change_password, false);
+  assert.equal(data.users[0].invitation_status, "accepted");
+  assert.equal(JSON.stringify(data.audit_logs).includes("MatKhauMoi2026"), false);
+  assert.throws(() => validateNewPassword(DEFAULT_ACCOUNT_PASSWORD), (error) => error.code === "default-password-reused");
+  assert.throws(() => validateNewPassword("matkhaumoi"), (error) => error.code === "weak-password");
 });

@@ -8,8 +8,8 @@ import {
   roleFromCurrentUserRecord,
 } from "../lib/auth.mjs";
 
-function request(role, method = "GET") {
-  return { method, user: { uid: `user-${role}`, role } };
+function request(role, method = "GET", mustChangePassword = false) {
+  return { method, user: { uid: `user-${role}`, role, mustChangePassword } };
 }
 
 function statusCode(fn) {
@@ -104,7 +104,7 @@ test("mọi API quản lý tài khoản đều chỉ dành cho Admin", () => {
     ["/api/admin/users/user-1", "PATCH"],
     ["/api/admin/users/user-1/disable", "POST"],
     ["/api/admin/users/user-1/enable", "POST"],
-    ["/api/admin/users/user-1/send-password-link", "POST"],
+    ["/api/admin/users/user-1/reset-password", "POST"],
   ];
   for (const [pathname, method] of routes) {
     assert.equal(statusCode(() => authorizeApiRequest(request("admin", method), pathname)), 200);
@@ -112,6 +112,21 @@ test("mọi API quản lý tài khoản đều chỉ dành cho Admin", () => {
       assert.equal(statusCode(() => authorizeApiRequest(request(role, method), pathname)), 403);
     }
   }
+});
+
+test("tài khoản dùng mật khẩu mặc định chỉ được gọi API đổi mật khẩu", () => {
+  assert.equal(statusCode(() => authorizeApiRequest(
+    request("sale", "POST", true),
+    "/api/auth/change-password",
+  )), 200);
+  assert.equal(statusCode(() => authorizeApiRequest(
+    request("sale", "GET", true),
+    "/api/bootstrap",
+  )), 403);
+  assert.equal(statusCode(() => authorizeApiRequest(
+    request("admin", "GET", true),
+    "/api/admin/users",
+  )), 403);
 });
 
 test("backend dùng Custom Claims hiện hành và chặn ngay tài khoản đã khóa", () => {

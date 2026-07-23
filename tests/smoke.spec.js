@@ -158,10 +158,12 @@ test("core screens, recommendation fixes, and modals render without client error
   await expect(page.locator(".accounts-table tbody tr").first()).toBeVisible();
   await expect(page.locator(".account-badge.role-admin").first()).toContainText("Admin / Chủ");
   await expect(page.locator("[data-action='disable-admin-user']").first()).toBeDisabled();
+  await expect(page.locator("[data-action='reset-admin-password']").first()).toBeVisible();
   await page.locator("[data-action='new-admin-user']").first().click();
   await expect(page.locator("#adminUserForm input[name='email']")).toBeVisible();
   await expect(page.locator("#adminUserForm select[name='role'] option")).toHaveCount(4);
   await expect(page.locator("#adminUserForm input[name='password']")).toHaveCount(0);
+  await expect(page.locator("#adminUserForm").locator("..")).toContainText("Gg1234");
   await page.locator("[aria-label='Đóng']").click();
   await page.locator("[data-action='set-settings-tab'][data-tab='audit']").click();
   await expect(page.getByRole("heading", { name: "Audit log" })).toBeVisible();
@@ -200,6 +202,8 @@ test("login screen fully covers the app on desktop and mobile", async ({ page })
     await expect(page.locator(".auth-screen")).toBeVisible();
     await expect(page.locator(".auth-brand-lockup")).toBeVisible();
     await expect(page.locator("#authLoginForm")).toBeVisible();
+    await expect(page.locator(".auth-form-panel")).toContainText("Gg1234");
+    await expect(page.locator("[data-action='reset-auth-password']")).toHaveCount(0);
     const coverage = await page.locator(".auth-backdrop").evaluate((backdrop) => {
       const rect = backdrop.getBoundingClientRect();
       const style = getComputedStyle(backdrop);
@@ -218,6 +222,20 @@ test("login screen fully covers the app on desktop and mobile", async ({ page })
     expect(coverage.height).toBe(viewport.height);
     expect(coverage.backgroundImage.includes("gradient") || coverage.backgroundColor !== "rgba(0, 0, 0, 0)").toBeTruthy();
   }
+});
+
+test("màn hình bắt buộc đổi mật khẩu che toàn bộ ứng dụng", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(process.env.BASE_URL || "http://localhost:4173", { waitUntil: "networkidle" });
+  await page.evaluate(() => window.showRequiredPasswordChange());
+  await expect(page.locator("#requiredPasswordChangeForm")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Đặt mật khẩu mới" })).toBeVisible();
+  await expect(page.locator("#requiredPasswordChangeForm input[name='password']")).toHaveAttribute("minlength", "8");
+  const coverage = await page.locator(".auth-backdrop").evaluate((backdrop) => {
+    const rect = backdrop.getBoundingClientRect();
+    return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
+  });
+  expect(coverage).toEqual({ top: 0, left: 0, width: 390, height: 844 });
 });
 
 test("quản lý tài khoản responsive và không tràn ngang trên mobile", async ({ page }) => {

@@ -1,4 +1,4 @@
-import { createBootstrapPassword, sendFirebasePasswordResetEmail } from "../lib/account-admin.mjs";
+import { DEFAULT_ACCOUNT_PASSWORD } from "../lib/account-admin.mjs";
 import { ROLES } from "../lib/auth.mjs";
 import { getFirebaseServices } from "../lib/firebase-admin.mjs";
 
@@ -26,13 +26,17 @@ async function main() {
       email,
       displayName: name,
       emailVerified: false,
-      password: createBootstrapPassword(),
+      password: DEFAULT_ACCOUNT_PASSWORD,
       disabled: false,
     });
     created = true;
   }
 
-  await auth.setCustomUserClaims(user.uid, { ...(user.customClaims || {}), role });
+  await auth.setCustomUserClaims(user.uid, {
+    ...(user.customClaims || {}),
+    role,
+    ...(created ? { mustChangePassword: true } : {}),
+  });
   const now = new Date().toISOString();
   const collectionName = `${process.env.FIRESTORE_COLLECTION_PREFIX || ""}users`;
   await firestore.collection(collectionName).doc(user.uid).set({
@@ -46,26 +50,13 @@ async function main() {
     active: !user.disabled,
     created_by: "firebase:create-user",
     updated_at: now,
-    invitation_status: "pending",
-    ...(created ? { created_at: now, password_credential_created: true } : {}),
+    ...(created ? {
+      created_at: now,
+      invitation_status: "default_password",
+      password_credential_created: true,
+      must_change_password: true,
+    } : {}),
   }, { merge: true });
-
-  let passwordEmailSent = false;
-  let passwordEmailError = "";
-  try {
-    await sendFirebasePasswordResetEmail(email);
-    passwordEmailSent = true;
-    await firestore.collection(collectionName).doc(user.uid).set({
-      invitation_status: "sent",
-      updated_at: new Date().toISOString(),
-    }, { merge: true });
-  } catch (error) {
-    passwordEmailError = error.message || String(error);
-    await firestore.collection(collectionName).doc(user.uid).set({
-      invitation_status: "failed",
-      updated_at: new Date().toISOString(),
-    }, { merge: true });
-  }
 
   console.log(JSON.stringify({
     uid: user.uid,
@@ -73,8 +64,7 @@ async function main() {
     name,
     role,
     created,
-    passwordEmailSent,
-    ...(passwordEmailError ? { warning: passwordEmailError } : {}),
+    defaultPasswordApplied: created,
   }, null, 2));
   if (!created) {
     await auth.revokeRefreshTokens(user.uid);
