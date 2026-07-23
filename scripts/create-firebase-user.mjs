@@ -1,6 +1,6 @@
-const crypto = require("crypto");
-const { getFirebaseServices } = require("../lib/firebase-admin");
-const { ROLES } = require("../lib/auth");
+import crypto from "node:crypto";
+import { ROLES } from "../lib/auth.mjs";
+import { getFirebaseServices } from "../lib/firebase-admin.mjs";
 
 function argument(name, fallback = "") {
   const prefix = `--${name}=`;

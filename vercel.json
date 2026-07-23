@@ -1,6 +1,6 @@
 {
   "functions": {
-    "api/[...path].js": {
+    "api/[...path].mjs": {
       "includeFiles": "data/seed.json"
     }
   }

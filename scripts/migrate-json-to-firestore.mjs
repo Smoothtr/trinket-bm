@@ -1,7 +1,10 @@
-const fs = require("fs");
-const path = require("path");
-const { importFirestoreState } = require("../lib/store");
-const { normalizeData } = require("../server");
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { importFirestoreState } from "../lib/store.mjs";
+import { normalizeData } from "../server.mjs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function argument(name, fallback = "") {
   const prefix = `--${name}=`;

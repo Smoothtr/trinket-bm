@@ -1,17 +1,19 @@
-const http = require("http");
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
-const os = require("os");
-const {
+import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
+import os from "node:os";
+import { fileURLToPath } from "node:url";
+import {
   assertOrderPatchAllowed,
   authenticateRequest,
   authorizeApiRequest,
-} = require("./lib/auth");
-const { createStore } = require("./lib/store");
+} from "./lib/auth.mjs";
+import { createStore } from "./lib/store.mjs";
 
 const PORT = Number(process.env.PORT || 4173);
-const ROOT = __dirname;
+const SERVER_PATH = fileURLToPath(import.meta.url);
+const ROOT = path.dirname(SERVER_PATH);
 const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_DIR = path.join(ROOT, "data");
 const IS_VERCEL = process.env.VERCEL === "1";
@@ -1974,12 +1976,12 @@ async function handleRequest(req, res) {
   }
 }
 
-if (require.main === module) {
+if (process.argv[1] && path.resolve(process.argv[1]) === SERVER_PATH) {
   const server = http.createServer(handleRequest);
   server.listen(PORT, () => {
     console.log(`Trinket Business Manager running at http://localhost:${PORT} (${dataStore.backend})`);
   });
 }
 
-module.exports = handleRequest;
-module.exports.normalizeData = normalizeData;
+export { normalizeData };
+export default handleRequest;

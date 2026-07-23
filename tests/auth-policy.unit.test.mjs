@@ -1,11 +1,11 @@
-const assert = require("node:assert/strict");
-const test = require("node:test");
-const {
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
   assertOrderPatchAllowed,
   authorizeApiRequest,
   firebaseConfigStatus,
   isAuthRequired,
-} = require("../lib/auth");
+} from "../lib/auth.mjs";
 
 function request(role, method = "GET") {
   return { method, user: { uid: `user-${role}`, role } };
