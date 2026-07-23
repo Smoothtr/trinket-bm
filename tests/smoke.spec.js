@@ -68,7 +68,7 @@ test("core screens, recommendation fixes, and modals render without client error
   await page.locator('.product-item-row [data-field="unit_cost"]').fill("1000000");
   await page.locator('.product-item-row [data-field="quantity"]').fill("2");
   await expect(page.locator('.product-item-row [data-field="unit_cost"]')).toHaveValue("1.000.000");
-  await expect(page.locator('.product-item-row [data-item-cost-output]')).toContainText("2.000.000");
+  await expect(page.locator('.product-item-row [data-item-cost-output]')).toHaveCount(0);
   await expect(page.getByText("Engine báo giá")).toBeVisible();
   await expect(page.getByText("Bảo hành")).toHaveCount(0);
   await page.locator("[data-action='add-order-item']").click();
@@ -172,9 +172,38 @@ test("custom product editor remains usable on mobile", async ({ page }) => {
   await page.locator("#newOrderBtn").click();
   await page.locator('[data-action="set-product-mode"][data-mode="custom"]').click();
   await expect(page.locator('[data-field="unit_cost"]')).toBeVisible();
+  await expect(page.locator('[data-item-cost-output]')).toHaveCount(0);
   await expect(page.locator('[data-action="choose-order-image"]')).toBeVisible();
   await page.locator('[data-field="unit_cost"]').fill("25000000");
   await expect(page.locator('[data-field="unit_cost"]')).toHaveValue("25.000.000");
   const overflows = await page.locator(".product-item-row").evaluate((row) => row.scrollWidth > row.clientWidth + 1);
   expect(overflows).toBeFalsy();
+});
+
+test("login screen fully covers the app on desktop and mobile", async ({ page }) => {
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto(process.env.BASE_URL || "http://localhost:4173", { waitUntil: "networkidle" });
+    await page.evaluate(() => window.showLogin());
+    await expect(page.locator(".auth-screen")).toBeVisible();
+    await expect(page.locator(".auth-brand-lockup")).toBeVisible();
+    await expect(page.locator("#authLoginForm")).toBeVisible();
+    const coverage = await page.locator(".auth-backdrop").evaluate((backdrop) => {
+      const rect = backdrop.getBoundingClientRect();
+      const style = getComputedStyle(backdrop);
+      return {
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+        backgroundImage: style.backgroundImage,
+        backgroundColor: style.backgroundColor,
+      };
+    });
+    expect(coverage.top).toBe(0);
+    expect(coverage.left).toBe(0);
+    expect(coverage.width).toBe(viewport.width);
+    expect(coverage.height).toBe(viewport.height);
+    expect(coverage.backgroundImage.includes("gradient") || coverage.backgroundColor !== "rgba(0, 0, 0, 0)").toBeTruthy();
+  }
 });

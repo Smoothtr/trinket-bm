@@ -319,20 +319,35 @@ async function authenticatedResource(path, { downloadName = "" } = {}) {
 function showLogin(message = "") {
   modalHost.innerHTML = `
     <div class="modal-backdrop auth-backdrop">
-      <section class="modal modal-narrow auth-modal" role="dialog" aria-modal="true" aria-label="Đăng nhập Trinket" data-auth-lock="true">
-        <div class="modal-header">
-          <div><p class="eyebrow">Nội bộ Trinket</p><h2>Đăng nhập</h2><p class="muted small">Sử dụng tài khoản nhân viên đã được cấp quyền.</p></div>
+      <section class="modal auth-screen" role="dialog" aria-modal="true" aria-label="Đăng nhập Trinket" data-auth-lock="true">
+        <div class="auth-brand-panel">
+          <div class="auth-brand-lockup">
+            <span class="auth-brand-mark" aria-hidden="true">T</span>
+            <span><strong>Trinket</strong><small>Business Manager</small></span>
+          </div>
+          <div class="auth-brand-copy">
+            <p class="eyebrow">Không gian làm việc nội bộ</p>
+            <h1>Quản lý vận hành trang sức trong một nơi.</h1>
+            <p>Theo dõi deal, sản phẩm, khách hàng và tài chính với dữ liệu được phân quyền cho từng nhân viên.</p>
+          </div>
+          <p class="auth-security-note"><i data-lucide="shield-check"></i><span>Hệ thống riêng tư · Firebase Authentication</span></p>
         </div>
-        <div class="modal-body">
-          <form id="authLoginForm" class="form-grid">
+        <div class="auth-form-panel">
+          <div class="auth-form-header">
+            <p class="eyebrow">Nội bộ Trinket</p>
+            <h2>Chào mừng trở lại</h2>
+            <p>Sử dụng tài khoản nhân viên đã được cấp quyền.</p>
+          </div>
+          <form id="authLoginForm" class="form-grid auth-form">
             <div class="field full"><label>Email</label><input name="email" type="email" autocomplete="username" required placeholder="ten@trinket.vn"></div>
             <div class="field full"><label>Mật khẩu</label><input name="password" type="password" autocomplete="current-password" required></div>
             ${message ? `<div class="field full auth-message">${esc(message)}</div>` : ""}
           </form>
-        </div>
-        <div class="modal-footer">
-          <button class="button" type="button" data-action="reset-auth-password">Quên mật khẩu</button>
-          <button class="primary" type="submit" form="authLoginForm"><i data-lucide="log-in"></i><span>Đăng nhập</span></button>
+          <div class="auth-actions">
+            <button class="primary auth-submit" type="submit" form="authLoginForm"><i data-lucide="log-in"></i><span>Đăng nhập</span></button>
+            <button class="auth-forgot" type="button" data-action="reset-auth-password">Quên mật khẩu?</button>
+          </div>
+          <p class="auth-help">Nếu chưa có tài khoản, vui lòng liên hệ Admin / Chủ.</p>
         </div>
       </section>
     </div>
@@ -1813,7 +1828,6 @@ function productItemEditorRow(item, index) {
   const itemId = item.id || createClientId("itm");
   const itemImage = parseItemImage(item.image);
   const unitCost = Number(item.unit_cost || 0);
-  const quantity = Math.max(1, Number(item.quantity || 1));
   return `
     <article class="editor-item product-item-row mode-${productMode}" data-item-id="${esc(itemId)}" data-unit-cost="${unitCost}" data-image="${esc(itemImage ? JSON.stringify(itemImage) : "")}" data-metal-pricing="${esc(JSON.stringify(metalPricing))}" data-legacy-weight="${esc(specs.weight || "")}">
       <div class="editor-item-header">
@@ -1839,7 +1853,6 @@ function productItemEditorRow(item, index) {
       </div>
       <div class="product-cost-media-grid">
         <div class="field custom-only"><label>Giá vốn mẫu</label><input data-field="unit_cost" data-money-input inputmode="numeric" value="${moneyInputValue(unitCost)}" placeholder="0"></div>
-        <div class="field"><label>Giá vốn sản phẩm</label><output class="field-output" data-item-cost-output>${fmtMoney(unitCost * quantity)}</output></div>
         ${orderItemImageEditor(itemImage)}
       </div>
       <div class="field"><label>Ghi chú yêu cầu sản phẩm</label><textarea data-field="note" rows="2" placeholder="Loại đá, màu, khắc tên, chỉnh thiết kế...">${esc(item.note || "")}</textarea></div>
