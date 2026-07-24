@@ -4,6 +4,8 @@ const toastHost = document.querySelector("#toastHost");
 const viewTitle = document.querySelector("#viewTitle");
 const appShell = document.querySelector("#appShell");
 const DEFAULT_ACCOUNT_PASSWORD = "Gg1234";
+const BUSINESS_TIME_ZONE = "Asia/Ho_Chi_Minh";
+const BUSINESS_TIME_OFFSET = "+07:00";
 const AUTH_SESSION_HINT_KEY = "trinket.auth.session";
 const UI_STATE_KEY = "trinket.ui.state";
 const VALID_VIEWS = ["dashboard", "orders", "products", "customers", "vendors", "finance", "shipping", "settings"];
@@ -69,7 +71,8 @@ const state = {
   session: null,
   view: initialUiState.view,
   search: "",
-  period: "2026-05",
+  period: "all",
+  customDateRange: { from: "", to: "" },
   role: "admin",
   statusFilter: "all",
   quickFilter: "all",
@@ -364,9 +367,44 @@ function moneyTone(value) {
   return Number(value || 0) < 0 ? "negative" : "";
 }
 
+function businessTimeParts(value = new Date(), { includeTime = false } = {}) {
+  const parsed = value instanceof Date ? value : new Date(value);
+  const safeDate = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: BUSINESS_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    ...(includeTime ? { hour: "2-digit", minute: "2-digit", hourCycle: "h23" } : {}),
+  }).formatToParts(safeDate);
+  return Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+}
+
+function businessDateIso(value = new Date()) {
+  const parts = businessTimeParts(value);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function businessDateTimeLocalValue(value = new Date()) {
+  const parts = businessTimeParts(value, { includeTime: true });
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
+
+function businessDateTimeLocalToIso(value) {
+  const raw = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) return new Date().toISOString();
+  return new Date(`${raw}:00${BUSINESS_TIME_OFFSET}`).toISOString();
+}
+
+function businessDayTimestamp(value, endOfDay = false) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return 0;
+  return new Date(`${value}T${endOfDay ? "23:59:59" : "00:00:00"}${BUSINESS_TIME_OFFSET}`).getTime();
+}
+
 function fmtDate(value) {
   if (!value) return "-";
-  return new Date(`${String(value).slice(0, 10)}T00:00:00`).toLocaleDateString("vi-VN");
+  const [year, month, day] = String(value).slice(0, 10).split("-");
+  return year && month && day ? `${Number(day)}/${Number(month)}/${year}` : "-";
 }
 
 function formatDateInput(value) {
@@ -387,7 +425,7 @@ function parseViDate(value) {
 
 function fmtDateTime(value) {
   if (!value) return "-";
-  return new Date(value).toLocaleString("vi-VN");
+  return new Date(value).toLocaleString("vi-VN", { timeZone: BUSINESS_TIME_ZONE });
 }
 
 function fmtMarketTime(value) {
@@ -627,6 +665,7 @@ async function enterAuthenticatedApp(session) {
 
 async function loadData() {
   state.data = await api("/api/bootstrap");
+  syncPeriodFilterOptions();
 }
 
 function toast(message) {
@@ -637,17 +676,106 @@ function toast(message) {
   setTimeout(() => node.remove(), 3200);
 }
 
-function isInPeriod(dateValue) {
-  if (state.period === "all") return true;
+function shiftMonth(monthKey, offset) {
+  const [year, month] = String(monthKey || "").split("-").map(Number);
+  if (!year || !month) return businessDateIso().slice(0, 7);
+  const date = new Date(Date.UTC(year, month - 1 + Number(offset || 0), 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function quarterFromMonth(monthKey) {
+  const [year, month] = String(monthKey || "").split("-");
+  return year && month ? `${year}-Q${Math.ceil(Number(month) / 3)}` : "";
+}
+
+function periodLabel(period = state.period) {
+  if (period === "all") return "Toàn thời gian";
+  if (period === "custom") {
+    const from = formatDateInput(state.customDateRange.from);
+    const to = formatDateInput(state.customDateRange.to);
+    return from && to ? `${from} – ${to}` : "Tùy chỉnh";
+  }
+  if (/^\d{4}-Q[1-4]$/.test(period)) {
+    const [year, quarter] = period.split("-Q");
+    return `Quý ${quarter}/${year}`;
+  }
+  if (/^\d{4}-\d{2}$/.test(period)) {
+    const [year, month] = period.split("-");
+    return `Tháng ${month}/${year}`;
+  }
+  return period;
+}
+
+function availablePeriodMonths() {
+  const currentMonth = businessDateIso().slice(0, 7);
+  const dataMonths = [
+    ...(state.data?.orders || []).map((order) => String(order.date_order || "").slice(0, 7)),
+    ...(state.data?.expenses || []).map((expense) => String(expense.date || "").slice(0, 7)),
+    ...(state.data?.settings?.goal_months || []),
+  ].filter((month) => /^\d{4}-\d{2}$/.test(month)).sort().reverse();
+  const selectedMonth = /^\d{4}-\d{2}$/.test(state.period) ? state.period : "";
+  return [...new Set([currentMonth, shiftMonth(currentMonth, -1), selectedMonth, ...dataMonths].filter(Boolean))].slice(0, 12);
+}
+
+function syncPeriodFilterOptions() {
+  const filter = document.querySelector("#periodFilter");
+  if (!filter) return;
+  const months = availablePeriodMonths();
+  const quarters = [...new Set(months.map(quarterFromMonth).filter(Boolean))];
+  filter.innerHTML = [
+    `<option value="all">Toàn thời gian</option>`,
+    `<optgroup label="Theo tháng">${months.map((month) => `<option value="${month}">${periodLabel(month)}</option>`).join("")}</optgroup>`,
+    `<optgroup label="Theo quý">${quarters.map((quarter) => `<option value="${quarter}">${periodLabel(quarter)}</option>`).join("")}</optgroup>`,
+    `<option value="custom">${state.period === "custom" ? periodLabel("custom") : "Tùy chỉnh..."}</option>`,
+  ].join("");
+  filter.value = state.period;
+}
+
+function openPeriodRangePopover() {
+  const popover = document.querySelector("#periodRangePopover");
+  const fromInput = document.querySelector("#periodDateFrom");
+  const toInput = document.querySelector("#periodDateTo");
+  const today = businessDateIso();
+  fromInput.value = state.customDateRange.from || `${today.slice(0, 7)}-01`;
+  toInput.value = state.customDateRange.to || today;
+  popover.hidden = false;
+  window.setTimeout(() => fromInput.focus(), 0);
+}
+
+function closePeriodRangePopover({ restoreFilter = false } = {}) {
+  const popover = document.querySelector("#periodRangePopover");
+  if (popover) popover.hidden = true;
+  if (restoreFilter) document.querySelector("#periodFilter").value = state.period;
+}
+
+function applyPeriodRange() {
+  const from = document.querySelector("#periodDateFrom")?.value || "";
+  const to = document.querySelector("#periodDateTo")?.value || "";
+  if (!from || !to) return toast("Vui lòng chọn đủ ngày bắt đầu và ngày kết thúc");
+  if (from > to) return toast("Ngày bắt đầu phải trước hoặc bằng ngày kết thúc");
+  state.customDateRange = { from, to };
+  state.period = "custom";
+  syncPeriodFilterOptions();
+  closePeriodRangePopover();
+  render();
+}
+
+function dateMatchesPeriod(dateValue, period = state.period, customRange = state.customDateRange) {
+  if (period === "all") return true;
   if (!dateValue) return false;
   const date = String(dateValue).slice(0, 10);
-  if (state.period.includes("-Q")) {
-    const [year, quarterRaw] = state.period.split("-Q");
+  if (period === "custom") return Boolean(customRange.from && customRange.to && date >= customRange.from && date <= customRange.to);
+  if (period.includes("-Q")) {
+    const [year, quarterRaw] = period.split("-Q");
     const month = Number(date.slice(5, 7));
     const quarter = Math.ceil(month / 3);
     return date.startsWith(year) && String(quarter) === quarterRaw;
   }
-  return date.startsWith(state.period);
+  return date.startsWith(period);
+}
+
+function isInPeriod(dateValue) {
+  return dateMatchesPeriod(dateValue);
 }
 
 function orderMatchesSearch(order) {
@@ -672,7 +800,7 @@ function orderMatchesSearch(order) {
 
 function filteredOrders({ ignoreStatus = false } = {}) {
   return state.data.orders
-    .filter((order) => isInPeriod(order.date_order) || isInPeriod(order.payment_date))
+    .filter((order) => isInPeriod(order.date_order))
     .filter(orderMatchesSearch)
     .filter((order) => ignoreStatus || state.statusFilter === "all" || order.status === state.statusFilter)
     .filter((order) => state.quickFilter === "all" || (state.quickFilter === "overdue" && order.overdue) || (state.quickFilter === "receivable" && order.balance_due > 0))
@@ -711,7 +839,7 @@ function receivableRows(orders = state.data.orders) {
     .filter((order) => order.balance_due > 0 && order.status !== "huy_hoan")
     .map((order) => {
       const baseDate = order.payment_date || order.date_order;
-      const age = baseDate ? Math.max(0, Math.floor((Date.now() - new Date(`${baseDate}T00:00:00`).getTime()) / 86400000)) : 0;
+      const age = baseDate ? Math.max(0, Math.floor((Date.now() - businessDayTimestamp(baseDate)) / 86400000)) : 0;
       return { ...order, debt_age: age };
     })
     .sort((a, b) => b.debt_age - a.debt_age);
@@ -1101,6 +1229,11 @@ function goalActual(goal, orders) {
 
 function goalMonthsInPeriod(months) {
   if (state.period === "all") return months;
+  if (state.period === "custom") {
+    const fromMonth = state.customDateRange.from.slice(0, 7);
+    const toMonth = state.customDateRange.to.slice(0, 7);
+    return months.filter((month) => fromMonth && toMonth && month >= fromMonth && month <= toMonth);
+  }
   if (state.period.includes("-Q")) {
     const [year, quarterRaw] = state.period.split("-Q");
     const start = (Number(quarterRaw) - 1) * 3 + 1;
@@ -1186,7 +1319,7 @@ function renderDashboard() {
 
       <section class="grid-2">
         <article class="panel charts">
-          <div class="panel-header"><h2>Đơn theo loại sản phẩm</h2><span class="tag">${esc(state.period)}</span></div>
+          <div class="panel-header"><h2>Đơn theo loại sản phẩm</h2><span class="tag">${esc(periodLabel())}</span></div>
           <div class="panel-body">${donutChart(productCounts)}</div>
         </article>
         <article class="panel charts">
@@ -1264,16 +1397,14 @@ function buildMonthlySeries() {
 
 function previousMonthPeriod(period) {
   if (!/^\d{4}-\d{2}$/.test(period)) return null;
-  const [year, month] = period.split("-").map(Number);
-  const date = new Date(year, month - 2, 1);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  return shiftMonth(period, -1);
 }
 
 function periodStats(period, options = {}) {
   const orders = state.data.orders
-    .filter((order) => order.status !== "huy_hoan" && (period === "all" || String(order.date_order).startsWith(period) || String(order.payment_date || "").startsWith(period)))
+    .filter((order) => order.status !== "huy_hoan" && dateMatchesPeriod(order.date_order, period))
     .filter((order) => !options.applySearch || orderMatchesSearch(order));
-  const expenses = state.data.expenses.filter((expense) => period === "all" || String(expense.date).startsWith(period));
+  const expenses = state.data.expenses.filter((expense) => dateMatchesPeriod(expense.date, period));
   const revenue = sum(orders, (order) => order.price);
   const cogs = sum(orders, (order) => order.total_cost);
   const profit = revenue - cogs;
@@ -1472,8 +1603,8 @@ function renderMarketPrices() {
     return `<div class="empty compact">Chưa có dữ liệu giá kim loại.</div>`;
   }
   const statusText = {
-    live: "Realtime",
-    cached: "Cache",
+    live: "Vừa cập nhật",
+    cached: "Đã lưu",
     partial: "Một phần",
     fallback: "Dự phòng",
   }[market.status] || market.status;
@@ -1510,12 +1641,13 @@ function renderMarketPrices() {
     )
     .join("");
   const silverRef = (market.silver?.references || [])[0];
+  const marketUpdatedAt = market.sourceUpdatedAt || market.fetchedAt;
   return `
     <div class="market-price-card">
       <div class="market-toolbar">
         <div>
           <span class="tag">${esc(statusText)}</span>
-          <p class="small muted">Nguồn: ${esc(market.sourceLabel || "N/A")} · cập nhật ${fmtMarketTime(market.sourceUpdatedAt || market.fetchedAt)}</p>
+          <p class="small muted">Nguồn: ${esc(market.sourceLabel || "N/A")} · ${marketUpdatedAt ? `cập nhật ${fmtMarketTime(marketUpdatedAt)}` : "chưa cập nhật thị trường"}. Giá chỉ đổi khi bấm Cập nhật thị trường.</p>
         </div>
         <div class="toolbar-right">
           <button class="ghost" data-action="edit-metal-prices" title="Điều chỉnh giá nhập kim loại"><i data-lucide="pen-line"></i><span>Điều chỉnh giá</span></button>
@@ -1565,7 +1697,7 @@ function renderVendors() {
           <div class="panel-body">${barChart(vendorStats.map((vendor) => [vendor.name, vendor.cost]), fmtMoney)}</div>
         </article>
         <article class="panel">
-          <div class="panel-header"><h2>Giá kim loại</h2><span class="tag">${state.data.market_prices?.adjustedPriceCount ? `${state.data.market_prices.adjustedPriceCount} quy tắc` : "Realtime"}</span></div>
+          <div class="panel-header"><h2>Giá kim loại</h2><span class="tag">${state.data.market_prices?.adjustedPriceCount ? `${state.data.market_prices.adjustedPriceCount} quy tắc` : "Cập nhật thủ công"}</span></div>
           <div class="panel-body">${renderMarketPrices()}</div>
         </article>
       </section>
@@ -1621,7 +1753,7 @@ function renderFinance() {
       </section>
       <section class="grid-2">
         <article class="panel">
-          <div class="panel-header"><h2>Lãi/lỗ theo kỳ</h2><span class="tag">${esc(state.period)}</span></div>
+          <div class="panel-header"><h2>Lãi/lỗ theo kỳ</h2><span class="tag">${esc(periodLabel())}</span></div>
           <div class="panel-body">
             <div class="metric-row"><span>Doanh thu</span><strong>${fmtMoney(revenue)}</strong></div>
             <div class="metric-row"><span>Giá vốn</span><strong>${canSeeCosts() ? fmtMoney(cogs) : "Ẩn"}</strong></div>
@@ -1634,7 +1766,7 @@ function renderFinance() {
           <div class="panel-header"><h2>Thêm chi phí</h2><span class="tag">Chi phí</span></div>
           <div class="panel-body">
             <form id="expenseForm" class="form-grid">
-              <div class="field"><label>Ngày</label><input name="date" class="date-text" inputmode="numeric" pattern="\\d{1,2}/\\d{1,2}/\\d{4}" placeholder="dd/mm/yyyy" value="${formatDateInput(new Date().toISOString().slice(0, 10))}"></div>
+              <div class="field"><label>Ngày</label><input name="date" class="date-text" inputmode="numeric" pattern="\\d{1,2}/\\d{1,2}/\\d{4}" placeholder="dd/mm/yyyy" value="${formatDateInput(businessDateIso())}"></div>
               <div class="field"><label>Nhóm</label><select name="category">${state.data.meta.expense_categories.map((item) => `<option>${esc(item)}</option>`).join("")}</select></div>
               <div class="field full"><label>Diễn giải</label><input name="description" placeholder="Ví dụ: Instagram ads tháng 6"></div>
               <div class="field"><label>Số tiền</label><input name="amount" type="number" min="0" step="1000" placeholder="0"></div>
@@ -2478,7 +2610,7 @@ function orderFormTemplate(order = null) {
       `}
       <div class="field"><label>Trạng thái</label><select name="status">${statusOptions}</select></div>
       <div class="field"><label>Người phụ trách</label><input name="assignee" value="${esc(order?.assignee || "")}" placeholder="Linh"></div>
-      <div class="field"><label>Ngày đặt</label><input name="date_order" class="date-text" inputmode="numeric" pattern="\\d{1,2}/\\d{1,2}/\\d{4}" placeholder="dd/mm/yyyy" value="${formatDateInput(order?.date_order || new Date().toISOString().slice(0, 10))}"></div>
+      <div class="field"><label>Ngày đặt</label><input name="date_order" class="date-text" inputmode="numeric" pattern="\\d{1,2}/\\d{1,2}/\\d{4}" placeholder="dd/mm/yyyy" value="${formatDateInput(order?.date_order || businessDateIso())}"></div>
       <div class="field"><label>Due date</label><input name="due_date" class="date-text" inputmode="numeric" pattern="\\d{1,2}/\\d{1,2}/\\d{4}" placeholder="dd/mm/yyyy" value="${formatDateInput(order?.due_date || "")}"></div>
       ${orderCommercialEditor(order)}
       ${isEdit ? "" : `
@@ -3181,7 +3313,7 @@ function openCustomerDetail(customerId) {
               <section class="panel">
                 <div class="panel-header"><h3>Gợi ý chăm sóc</h3></div>
                 <div class="panel-body">
-                  <div class="metric-row"><span>Khách lâu chưa mua</span><strong>${customer.last_order_at && Date.now() - new Date(`${customer.last_order_at}T00:00:00`).getTime() > 45 * 86400000 ? "Có" : "Không"}</strong></div>
+                  <div class="metric-row"><span>Khách lâu chưa mua</span><strong>${customer.last_order_at && Date.now() - businessDayTimestamp(customer.last_order_at) > 45 * 86400000 ? "Có" : "Không"}</strong></div>
                   <div class="metric-row"><span>Ưu tiên upsell</span><strong>${customer.segment === "VIP" || customer.segment === "Quay lại" ? "Cao" : "Theo dõi"}</strong></div>
                 </div>
               </section>
@@ -3992,7 +4124,7 @@ async function saveMetalPricesFromForm() {
 }
 
 function nextGoalMonth(months) {
-  const latest = months.at(-1) || new Date().toISOString().slice(0, 7);
+  const latest = months.at(-1) || businessDateIso().slice(0, 7);
   const [year, month] = latest.split("-").map(Number);
   const date = new Date(year, month, 1);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
@@ -4269,7 +4401,7 @@ function openPaymentEditor(paymentId) {
   const payment = state.data.orders.flatMap((order) => order.payments || []).find((item) => item.id === paymentId);
   if (!payment) return;
   const order = state.data.orders.find((item) => item.id === payment.order_id);
-  const paidAt = payment.paid_at ? new Date(payment.paid_at).toISOString().slice(0, 16) : new Date().toISOString().slice(0, 16);
+  const paidAt = businessDateTimeLocalValue(payment.paid_at || new Date());
   modalHost.innerHTML = `
     <div class="modal-backdrop" data-action="close-modal">
       <section class="modal modal-narrow" role="dialog" aria-modal="true" aria-label="Sửa thanh toán">
@@ -4303,7 +4435,7 @@ async function savePaymentEditFromForm() {
       amount: readMoneyField(form.elements.amount),
       type: data.get("type"),
       method: data.get("method"),
-      paid_at: data.get("paid_at") ? new Date(data.get("paid_at")).toISOString() : new Date().toISOString(),
+      paid_at: businessDateTimeLocalToIso(data.get("paid_at")),
     },
   });
   await loadData();
@@ -4524,9 +4656,25 @@ function bindShell() {
     render();
   });
 
-  document.querySelector("#periodFilter").addEventListener("change", (event) => {
+  const periodControl = document.querySelector(".period-filter-control");
+  const periodFilter = document.querySelector("#periodFilter");
+  periodFilter.addEventListener("change", (event) => {
+    if (event.target.value === "custom") {
+      openPeriodRangePopover();
+      return;
+    }
     state.period = event.target.value;
+    closePeriodRangePopover();
     render();
+  });
+  document.querySelector("#applyPeriodRange").addEventListener("click", applyPeriodRange);
+  document.querySelector("#cancelPeriodRange").addEventListener("click", () => closePeriodRangePopover({ restoreFilter: true }));
+  document.addEventListener("click", (event) => {
+    const popover = document.querySelector("#periodRangePopover");
+    if (!popover?.hidden && !periodControl.contains(event.target)) closePeriodRangePopover({ restoreFilter: true });
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !document.querySelector("#periodRangePopover")?.hidden) closePeriodRangePopover({ restoreFilter: true });
   });
 
   document.querySelector("#roleFilter").addEventListener("change", (event) => {

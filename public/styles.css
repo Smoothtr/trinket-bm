@@ -1458,6 +1458,68 @@ tbody tr:hover .row-actions,
   flex-wrap: wrap;
 }
 
+.period-filter-control {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.period-filter-control > select {
+  min-width: 158px;
+}
+
+.period-range-popover {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(360px, calc(100vw - 36px));
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.period-range-popover[hidden] {
+  display: none;
+}
+
+.period-range-heading {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 13px;
+}
+
+.period-range-heading span,
+.period-range-grid label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.period-range-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.period-range-grid label {
+  display: grid;
+  gap: 6px;
+  font-weight: 750;
+}
+
+.period-range-grid input {
+  width: 100%;
+  color: var(--ink);
+}
+
+.period-range-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
 .product-image-actions .button,
 .product-image-actions .ghost {
   min-height: 32px;
@@ -2527,6 +2589,20 @@ tbody tr:hover .row-actions,
 
   .top-actions > * {
     min-width: 0;
+  }
+
+  .period-filter-control {
+    width: 100%;
+  }
+
+  .period-range-popover {
+    right: auto;
+    left: 0;
+    width: 100%;
+  }
+
+  .period-range-grid {
+    grid-template-columns: 1fr;
   }
 
   .top-actions .search {

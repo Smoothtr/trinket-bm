@@ -52,12 +52,26 @@
             <i data-lucide="search"></i>
             <input id="globalSearch" type="search" placeholder="Tìm đơn, khách, SĐT...">
           </label>
-          <select id="periodFilter" aria-label="Lọc thời gian">
-            <option value="all">Toàn thời gian</option>
-            <option value="2026-05" selected>Tháng 05/2026</option>
-            <option value="2026-04">Tháng 04/2026</option>
-            <option value="2026-Q2">Quý 2/2026</option>
-          </select>
+          <div class="period-filter-control">
+            <select id="periodFilter" aria-label="Lọc thời gian">
+              <option value="all" selected>Toàn thời gian</option>
+              <option value="custom">Tùy chỉnh...</option>
+            </select>
+            <div class="period-range-popover" id="periodRangePopover" hidden>
+              <div class="period-range-heading">
+                <strong>Chọn khoảng thời gian</strong>
+                <span>Theo ngày tạo đơn</span>
+              </div>
+              <div class="period-range-grid">
+                <label for="periodDateFrom">Từ ngày<input id="periodDateFrom" type="date"></label>
+                <label for="periodDateTo">Đến ngày<input id="periodDateTo" type="date"></label>
+              </div>
+              <div class="period-range-actions">
+                <button class="button" id="cancelPeriodRange" type="button">Hủy</button>
+                <button class="primary" id="applyPeriodRange" type="button">OK</button>
+              </div>
+            </div>
+          </div>
           <select id="roleFilter" aria-label="Vai trò xem dữ liệu">
             <option value="admin">Admin / Chủ</option>
             <option value="sale">Sale</option>

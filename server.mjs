@@ -85,6 +85,8 @@ const PAYMENT_STATUSES = [
 const CHANNELS = ["Instagram", "Facebook", "TikTok", "Giới thiệu", "Website", "Khác"];
 const PRODUCT_TYPES = ["Ring", "Bracelet", "Necklace", "Earrings", "Charm", "Other"];
 const MARKET_PRICE_TTL_MS = 30 * 60 * 1000;
+const BUSINESS_TIME_ZONE = "Asia/Ho_Chi_Minh";
+const BUSINESS_TIME_OFFSET = "+07:00";
 const GOLD_PRICE_URL = "https://giavang.now/api/prices";
 const SILVER_PRICE_URL = "https://giabac.phuquygroup.vn/PhuQuyPrice/SilverPricePartial";
 const GOLD_KARAT_RATES = [
@@ -514,7 +516,7 @@ function syncOrderPaymentStatus(order, data) {
   const latestPayment = (data.payments || [])
     .filter((payment) => payment.order_id === order.id)
     .sort((a, b) => String(b.paid_at).localeCompare(String(a.paid_at)))[0];
-  order.payment_date = latestPayment?.paid_at ? String(latestPayment.paid_at).slice(0, 10) : "";
+  order.payment_date = latestPayment?.paid_at ? businessDateFromTimestamp(latestPayment.paid_at) : "";
   order.updated_at = new Date().toISOString();
 }
 
@@ -556,7 +558,7 @@ function fallbackMarketPrices(data, errors = []) {
   }));
   return {
     status: "fallback",
-    fetchedAt: new Date().toISOString(),
+    fetchedAt: data.market_price_cache?.payload?.fetchedAt || null,
     sourceUpdatedAt: data.market_price_cache?.payload?.sourceUpdatedAt || null,
     sourceLabel: "Last known/static",
     cacheTtlMinutes: MARKET_PRICE_TTL_MS / 60000,
@@ -767,13 +769,13 @@ async function fetchMarketPrices(data) {
 async function getMarketPrices(data, { force = false } = {}) {
   const cache = data.market_price_cache?.payload;
   const fetchedAt = cache?.fetchedAt ? new Date(cache.fetchedAt).getTime() : 0;
-  const fresh = cache && Date.now() - fetchedAt < MARKET_PRICE_TTL_MS;
-  if (!force && fresh) {
+  if (!force) {
+    const stored = cache || fallbackMarketPrices(data);
     return {
       payload: applyMetalPriceOverrides({
-        ...cache,
-        status: cache.status === "live" ? "cached" : cache.status,
-        cacheAgeMinutes: Math.max(0, Math.round((Date.now() - fetchedAt) / 60000)),
+        ...stored,
+        status: cache?.status === "live" ? "cached" : stored.status,
+        cacheAgeMinutes: fetchedAt ? Math.max(0, Math.round((Date.now() - fetchedAt) / 60000)) : null,
       }, data),
       changed: false,
     };
@@ -791,8 +793,31 @@ async function getMarketPrices(data, { force = false } = {}) {
   return { payload: applyMetalPriceOverrides(payload, data), changed: true };
 }
 
+function businessDateIso(value = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: BUSINESS_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(value);
+  const date = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+  return `${date.year}-${date.month}-${date.day}`;
+}
+
+function businessDateFromTimestamp(value) {
+  const parsed = value ? new Date(value) : new Date();
+  return businessDateIso(Number.isNaN(parsed.getTime()) ? new Date() : parsed);
+}
+
+function addIsoDays(value, days) {
+  const [year, month, day] = String(value || "").split("-").map(Number);
+  if (!year || !month || !day) return businessDateIso();
+  const result = new Date(Date.UTC(year, month - 1, day + Number(days || 0)));
+  return result.toISOString().slice(0, 10);
+}
+
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return businessDateIso();
 }
 
 function orderSequence(data) {
@@ -875,9 +900,9 @@ function decorateOrder(order, data) {
   const paidAmount = payments.reduce((sum, payment) => {
     return sum + (payment.type === "hoan_tien" ? -money(payment.amount) : money(payment.amount));
   }, 0);
-  const dateOrder = order.date_order ? new Date(`${order.date_order}T00:00:00`) : null;
+  const dateOrder = order.date_order ? new Date(`${order.date_order}T00:00:00${BUSINESS_TIME_OFFSET}`) : null;
   const daysSinceOrder = dateOrder ? Math.max(0, Math.floor((Date.now() - dateOrder.getTime()) / 86400000)) : 0;
-  const due = order.due_date ? new Date(`${order.due_date}T23:59:59`) : null;
+  const due = order.due_date ? new Date(`${order.due_date}T23:59:59${BUSINESS_TIME_OFFSET}`) : null;
   return {
     ...order,
     items,
@@ -1024,7 +1049,7 @@ function quoteShipment(payload) {
     service_code: payload.service_code || "VCN",
     service_name: payload.service_code === "VTK" ? "Tiết kiệm" : "Chuyển phát nhanh",
     fee,
-    expected_delivery: new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10),
+    expected_delivery: addIsoDays(todayIso(), 3),
   };
 }
 
@@ -1113,7 +1138,7 @@ function renderReceipt(order, lang) {
       </div>
       <div>
         <h1>${labels.title}</h1>
-        <p class="muted">${labels.date}: ${new Date().toLocaleDateString("vi-VN")}</p>
+        <p class="muted">${labels.date}: ${new Intl.DateTimeFormat("vi-VN", { timeZone: BUSINESS_TIME_ZONE }).format(new Date())}</p>
       </div>
     </section>
     <section class="grid">
@@ -2081,5 +2106,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === SERVER_PATH) {
   });
 }
 
-export { normalizeData };
+export { addIsoDays, businessDateIso, getMarketPrices, normalizeData };
 export default handleRequest;
