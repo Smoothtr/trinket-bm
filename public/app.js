@@ -723,29 +723,42 @@ function syncPeriodFilterOptions() {
   const months = availablePeriodMonths();
   const quarters = [...new Set(months.map(quarterFromMonth).filter(Boolean))];
   filter.innerHTML = [
+    `<option value="" disabled>Chọn nhanh kỳ khác…</option>`,
     `<option value="all">Toàn thời gian</option>`,
     `<optgroup label="Theo tháng">${months.map((month) => `<option value="${month}">${periodLabel(month)}</option>`).join("")}</optgroup>`,
     `<optgroup label="Theo quý">${quarters.map((quarter) => `<option value="${quarter}">${periodLabel(quarter)}</option>`).join("")}</optgroup>`,
-    `<option value="custom">${state.period === "custom" ? periodLabel("custom") : "Tùy chỉnh..."}</option>`,
   ].join("");
-  filter.value = state.period;
+  syncPeriodControlState();
+}
+
+function syncPeriodControlState() {
+  const filter = document.querySelector("#periodFilter");
+  const trigger = document.querySelector("#customPeriodButton");
+  const summary = document.querySelector("#periodCustomSummary");
+  const isCustom = state.period === "custom";
+  if (filter) filter.value = isCustom ? "" : state.period;
+  if (trigger) trigger.classList.toggle("is-active", isCustom);
+  if (summary) summary.textContent = isCustom ? periodLabel("custom") : "Chọn từ ngày đến ngày";
 }
 
 function openPeriodRangePopover() {
   const popover = document.querySelector("#periodRangePopover");
   const fromInput = document.querySelector("#periodDateFrom");
   const toInput = document.querySelector("#periodDateTo");
+  const trigger = document.querySelector("#customPeriodButton");
   const today = businessDateIso();
   fromInput.value = state.customDateRange.from || `${today.slice(0, 7)}-01`;
   toInput.value = state.customDateRange.to || today;
   popover.hidden = false;
+  trigger?.setAttribute("aria-expanded", "true");
   window.setTimeout(() => fromInput.focus(), 0);
 }
 
 function closePeriodRangePopover({ restoreFilter = false } = {}) {
   const popover = document.querySelector("#periodRangePopover");
   if (popover) popover.hidden = true;
-  if (restoreFilter) document.querySelector("#periodFilter").value = state.period;
+  document.querySelector("#customPeriodButton")?.setAttribute("aria-expanded", "false");
+  if (restoreFilter) syncPeriodControlState();
 }
 
 function applyPeriodRange() {
@@ -4659,14 +4672,13 @@ function bindShell() {
   const periodControl = document.querySelector(".period-filter-control");
   const periodFilter = document.querySelector("#periodFilter");
   periodFilter.addEventListener("change", (event) => {
-    if (event.target.value === "custom") {
-      openPeriodRangePopover();
-      return;
-    }
+    if (!event.target.value) return;
     state.period = event.target.value;
     closePeriodRangePopover();
+    syncPeriodControlState();
     render();
   });
+  document.querySelector("#customPeriodButton").addEventListener("click", openPeriodRangePopover);
   document.querySelector("#applyPeriodRange").addEventListener("click", applyPeriodRange);
   document.querySelector("#cancelPeriodRange").addEventListener("click", () => closePeriodRangePopover({ restoreFilter: true }));
   document.addEventListener("click", (event) => {

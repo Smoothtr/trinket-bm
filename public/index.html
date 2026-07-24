@@ -52,11 +52,21 @@
             <i data-lucide="search"></i>
             <input id="globalSearch" type="search" placeholder="Tìm đơn, khách, SĐT...">
           </label>
-          <div class="period-filter-control">
-            <select id="periodFilter" aria-label="Lọc thời gian">
-              <option value="all" selected>Toàn thời gian</option>
-              <option value="custom">Tùy chỉnh...</option>
-            </select>
+          <div class="period-filter-control" aria-label="Lọc thời gian">
+            <button class="period-custom-trigger" id="customPeriodButton" type="button" aria-expanded="false" aria-controls="periodRangePopover">
+              <i data-lucide="calendar-range"></i>
+              <span>
+                <strong>Tùy chỉnh ngày</strong>
+                <small id="periodCustomSummary">Chọn từ ngày đến ngày</small>
+              </span>
+              <i class="period-custom-edit" data-lucide="pencil"></i>
+            </button>
+            <label class="period-quick-select">
+              <span>Chọn nhanh</span>
+              <select id="periodFilter" aria-label="Chọn nhanh thời gian">
+                <option value="all" selected>Toàn thời gian</option>
+              </select>
+            </label>
             <div class="period-range-popover" id="periodRangePopover" hidden>
               <div class="period-range-heading">
                 <strong>Chọn khoảng thời gian</strong>

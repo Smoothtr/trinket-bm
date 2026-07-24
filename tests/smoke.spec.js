@@ -199,19 +199,25 @@ test("core screens, recommendation fixes, and modals render without client error
 test("bộ lọc thời gian mặc định toàn thời gian và hỗ trợ khoảng ngày tùy chỉnh", async ({ page }) => {
   await page.goto(process.env.BASE_URL || "http://localhost:4173", { waitUntil: "networkidle" });
   await expect(page.locator("#periodFilter")).toHaveValue("all");
-  await expect(page.locator("#periodFilter option[value='custom']")).toContainText("Tùy chỉnh");
+  await expect(page.locator("#customPeriodButton")).toContainText("Tùy chỉnh ngày");
 
-  await page.locator("#periodFilter").selectOption("custom");
+  await page.locator("#customPeriodButton").click();
   await expect(page.locator("#periodRangePopover")).toBeVisible();
   await page.locator("#periodDateFrom").fill("2026-04-01");
   await page.locator("#periodDateTo").fill("2026-04-30");
   await page.locator("#applyPeriodRange").click();
 
   await expect(page.locator("#periodRangePopover")).toBeHidden();
-  await expect(page.locator("#periodFilter")).toHaveValue("custom");
+  await expect(page.locator("#periodFilter")).toHaveValue("");
+  await expect(page.locator("#customPeriodButton")).toHaveClass(/is-active/);
+  await expect(page.locator("#periodCustomSummary")).toHaveText("01/04/2026 – 30/04/2026");
   await expect(page.locator("main")).toContainText("01/04/2026 – 30/04/2026");
   await expect(page.locator("main")).toContainText("TRK-2026-0001");
   await expect(page.locator("main")).not.toContainText("TRK-2026-0002");
+
+  await page.locator("#customPeriodButton").click();
+  await expect(page.locator("#periodDateFrom")).toHaveValue("2026-04-01");
+  await expect(page.locator("#periodDateTo")).toHaveValue("2026-04-30");
 });
 
 test("custom product editor remains usable on mobile", async ({ page }) => {
