@@ -1230,6 +1230,80 @@ tbody tr:hover .row-actions,
   font-weight: 750;
 }
 
+.address-picker {
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.address-picker-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.address-picker-header h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.address-picker-header p,
+.address-picker-feedback {
+  margin: 3px 0 0;
+}
+
+.address-mode-toggle {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.address-search-control {
+  position: relative;
+}
+
+.address-search-control svg {
+  position: absolute;
+  top: 50%;
+  left: 11px;
+  width: 17px;
+  height: 17px;
+  color: var(--muted);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.address-search-control input {
+  width: 100%;
+  padding-left: 36px;
+  background: #fff;
+}
+
+.address-level-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.address-level-grid.is-two-level {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.address-level-grid select {
+  width: 100%;
+  background: #fff;
+}
+
+.address-picker-feedback.is-empty {
+  color: var(--red);
+}
+
 .source-lines {
   grid-column: 1 / -1;
   display: grid;
@@ -2356,6 +2430,20 @@ tbody tr:hover .row-actions,
   }
 
   .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .address-picker-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .address-mode-toggle {
+    align-self: flex-start;
+  }
+
+  .address-level-grid,
+  .address-level-grid.is-two-level {
     grid-template-columns: 1fr;
   }
 

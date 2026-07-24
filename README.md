@@ -134,6 +134,12 @@ Mật khẩu mặc định dùng chung là `Gg1234`. Nhân viên đăng nhập l
 - Deal cũ thiếu `unit_cost` hoặc `image` tiếp tục được normalize về `0` và `null`, không cần migration Firestore.
 - Các ô tiền trong luồng deal hiển thị dấu chấm hàng nghìn bằng utility `public/money.js`, nhưng API và Firestore vẫn nhận số nguyên.
 
+## Dữ liệu địa chỉ Việt Nam
+
+Form tạo deal và hồ sơ khách hàng hỗ trợ cả địa chỉ 3 cấp cũ (63 tỉnh/thành) và địa chỉ 2 cấp mới (34 tỉnh/thành). Dữ liệu được đóng gói trong `public/address-data.js` để không phụ thuộc API bên ngoài khi lên đơn, lấy từ dự án MIT [Vietnamese Provinces Database](https://github.com/thanglequoc/vietnamese-provinces-database).
+
+Chạy `npm run addresses:generate` khi cần tạo lại file dữ liệu từ các revision đã ghim trong `scripts/generate-address-data.mjs`.
+
 ## Kiểm thử
 
 ```bash

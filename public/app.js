@@ -147,24 +147,14 @@ const KPI_ICONS = {
   receivable: "hourglass",
 };
 
-const ADDRESS_BOOK = {
-  "TP. Hồ Chí Minh": {
-    "Quận 1": ["Phường Bến Thành", "Phường Đa Kao", "Phường Nguyễn Thái Bình"],
-    "Thủ Đức": ["Linh Chiểu", "Hiệp Bình Chánh", "Thảo Điền"],
-    "Tân Bình": ["Phường 2", "Phường 4", "Phường 15"],
-  },
-  "Hà Nội": {
-    "Đống Đa": ["Láng Hạ", "Ô Chợ Dừa", "Nam Đồng"],
-    "Hoàn Kiếm": ["Hàng Bạc", "Tràng Tiền", "Cửa Đông"],
-    "Cầu Giấy": ["Dịch Vọng", "Nghĩa Tân", "Yên Hòa"],
-  },
-  "Đà Nẵng": {
-    "Hải Châu": ["Thạch Thang", "Hải Châu 1", "Phước Ninh"],
-    "Sơn Trà": ["An Hải Bắc", "Phước Mỹ", "Mân Thái"],
-  },
-  "Thừa Thiên Huế": {
-    "Huế": ["Phú Hội", "Vĩnh Ninh", "Thuận Thành"],
-  },
+const ADDRESS_DATA = window.VIETNAM_ADDRESS_DATA || { legacy: [], current: [] };
+const ADDRESS_COUNTS = {
+  legacyDistricts: ADDRESS_DATA.legacy.reduce((total, province) => total + province[1].length, 0),
+  legacyWards: ADDRESS_DATA.legacy.reduce(
+    (total, province) => total + province[1].reduce((districtTotal, district) => districtTotal + district[1].length, 0),
+    0,
+  ),
+  currentWards: ADDRESS_DATA.current.reduce((total, province) => total + province[1].length, 0),
 };
 
 const viewNames = {
@@ -193,6 +183,112 @@ function esc(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function normalizeAddressTerm(value, { stripType = false } = {}) {
+  let normalized = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+  if (stripType) {
+    normalized = normalized
+      .replace(/^(tp\.?|thanh pho|tinh|quan|huyen|thi xa|phuong|xa|thi tran|dac khu)\s+/u, "")
+      .trim();
+  }
+  return normalized;
+}
+
+function addressValue(values, preferred, fallback = "") {
+  if (!values.length) return "";
+  if (values.includes(preferred)) return preferred;
+  const preferredKey = normalizeAddressTerm(preferred, { stripType: true });
+  const normalizedMatch = preferredKey
+    ? values.find((value) => normalizeAddressTerm(value, { stripType: true }) === preferredKey)
+    : "";
+  return normalizedMatch || (values.includes(fallback) ? fallback : values[0]);
+}
+
+function addressOptionTags(values, selected) {
+  if (!values.length) return '<option value="">Không có địa chỉ phù hợp</option>';
+  return values
+    .map((value) => `<option value="${esc(value)}" ${value === selected ? "selected" : ""}>${esc(value)}</option>`)
+    .join("");
+}
+
+function defaultAddressProvince(provinces) {
+  const provinceNames = provinces.map((province) => province[0]);
+  return addressValue(provinceNames, "Hồ Chí Minh");
+}
+
+function addressPickerSummary(mode) {
+  if (mode === "current") {
+    return `${fmtNumber(ADDRESS_DATA.current.length)} tỉnh/thành · ${fmtNumber(ADDRESS_COUNTS.currentWards)} phường/xã/đặc khu`;
+  }
+  return `${fmtNumber(ADDRESS_DATA.legacy.length)} tỉnh/thành · ${fmtNumber(ADDRESS_COUNTS.legacyDistricts)} quận/huyện · ${fmtNumber(ADDRESS_COUNTS.legacyWards)} phường/xã`;
+}
+
+function addressPickerTemplate({
+  prefix = "customer_",
+  idPrefix = "",
+  value = {},
+  initialMode = "",
+} = {}) {
+  const mode = initialMode || (value.province && !value.district ? "current" : "legacy");
+  const provinces = ADDRESS_DATA[mode] || [];
+  const provinceNames = provinces.map((province) => province[0]);
+  const province = addressValue(provinceNames, value.province, defaultAddressProvince(provinces));
+  const provinceEntry = provinces.find((entry) => entry[0] === province);
+  const districtNames = mode === "legacy" ? (provinceEntry?.[1] || []).map((district) => district[0]) : [];
+  const district = addressValue(districtNames, value.district);
+  const districtEntry = mode === "legacy" ? provinceEntry?.[1].find((entry) => entry[0] === district) : null;
+  const wardNames = mode === "current" ? provinceEntry?.[1] || [] : districtEntry?.[1] || [];
+  const ward = addressValue(wardNames, value.ward);
+  const provinceId = `${idPrefix}provinceSelect`;
+  const districtId = `${idPrefix}districtSelect`;
+  const wardId = `${idPrefix}wardSelect`;
+  const searchId = `${idPrefix}addressSearch`;
+  const modeId = `${idPrefix}addressTwoLevel`;
+
+  return `
+    <section class="address-picker field full" data-address-picker data-address-mode="${mode}">
+      <div class="address-picker-header">
+        <div>
+          <h3>Địa chỉ hành chính</h3>
+          <p class="small muted">Chọn cấu trúc phù hợp với địa chỉ nhận hàng.</p>
+        </div>
+        <label class="check-control address-mode-toggle" for="${modeId}">
+          <input id="${modeId}" type="checkbox" data-address-mode-toggle ${mode === "current" ? "checked" : ""}>
+          <span>Địa chỉ 2 cấp (mới)</span>
+        </label>
+      </div>
+      <div class="field address-search-field">
+        <label for="${searchId}">Tìm nhanh địa chỉ</label>
+        <div class="address-search-control">
+          <i data-lucide="search"></i>
+          <input id="${searchId}" type="search" data-address-search autocomplete="off" placeholder="Nhập Hà, Hà Nam, Đống Đa, Bến Thành...">
+        </div>
+      </div>
+      <div class="address-level-grid ${mode === "current" ? "is-two-level" : ""}" data-address-levels>
+        <div class="field">
+          <label for="${provinceId}">Tỉnh/TP</label>
+          <select name="${prefix}province" id="${provinceId}" data-address-province required>${addressOptionTags(provinceNames, province)}</select>
+        </div>
+        <div class="field" data-address-district-field ${mode === "current" ? "hidden" : ""}>
+          <label for="${districtId}">Quận/Huyện</label>
+          <select name="${prefix}district" id="${districtId}" data-address-district ${mode === "current" ? "disabled" : "required"}>${addressOptionTags(districtNames, district)}</select>
+        </div>
+        <div class="field">
+          <label for="${wardId}">Phường/Xã/Đặc khu</label>
+          <select name="${prefix}ward" id="${wardId}" data-address-ward required>${addressOptionTags(wardNames, ward)}</select>
+        </div>
+      </div>
+      <p class="address-picker-feedback small muted" data-address-feedback aria-live="polite">${addressPickerSummary(mode)}</p>
+    </section>
+  `;
 }
 
 function fmtMoney(value) {
@@ -2367,11 +2463,6 @@ function orderFormTemplate(order = null) {
   const orderId = order?.id || createClientId("ord");
   const channelOptions = optionTags(state.data.meta.channels, order?.customer?.channel || "");
   const statusOptions = optionTags(state.data.meta.order_statuses, order?.status || "tu_van");
-  const provinceOptions = Object.keys(ADDRESS_BOOK).map((province) => `<option value="${esc(province)}">${esc(province)}</option>`).join("");
-  const firstProvince = Object.keys(ADDRESS_BOOK)[0];
-  const districtOptions = Object.keys(ADDRESS_BOOK[firstProvince]).map((district) => `<option value="${esc(district)}">${esc(district)}</option>`).join("");
-  const firstDistrict = Object.keys(ADDRESS_BOOK[firstProvince])[0];
-  const wardOptions = ADDRESS_BOOK[firstProvince][firstDistrict].map((ward) => `<option value="${esc(ward)}">${esc(ward)}</option>`).join("");
   return `
     <form id="${isEdit ? "orderEditForm" : "orderForm"}" class="form-grid order-editor-form">
       <input type="hidden" name="id" value="${esc(orderId)}">
@@ -2382,10 +2473,8 @@ function orderFormTemplate(order = null) {
         <div class="field"><label>Số điện thoại</label><input name="customer_phone" required placeholder="090..."></div>
         <div class="field"><label>Kênh</label><select name="customer_channel">${channelOptions}</select></div>
         <div class="field"><label>Account</label><input name="customer_account" placeholder="@instagram"></div>
-        <div class="field full"><label>Địa chỉ giao hàng</label><input name="customer_address" placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh"></div>
-        <div class="field"><label>Tỉnh/TP</label><select name="customer_province" id="provinceSelect">${provinceOptions}</select></div>
-        <div class="field"><label>Quận/Huyện</label><select name="customer_district" id="districtSelect">${districtOptions}</select></div>
-        <div class="field"><label>Phường/Xã</label><select name="customer_ward" id="wardSelect">${wardOptions}</select></div>
+        <div class="field full"><label>Địa chỉ giao hàng</label><input name="customer_address" placeholder="Số nhà, tên đường, thôn/xóm..."></div>
+        ${addressPickerTemplate({ initialMode: "legacy" })}
       `}
       <div class="field"><label>Trạng thái</label><select name="status">${statusOptions}</select></div>
       <div class="field"><label>Người phụ trách</label><input name="assignee" value="${esc(order?.assignee || "")}" placeholder="Linh"></div>
@@ -2890,28 +2979,117 @@ function applySuggestedPrice() {
   toast("Đã áp dụng giá đề xuất");
 }
 
-function bindAddressSelectors(provinceSelector = "#provinceSelect", districtSelector = "#districtSelect", wardSelector = "#wardSelect") {
-  const provinceSelect = document.querySelector(provinceSelector);
-  const districtSelect = document.querySelector(districtSelector);
-  const wardSelect = document.querySelector(wardSelector);
-  if (!provinceSelect || !districtSelect || !wardSelect) return;
+function bindAddressPicker(root) {
+  if (!root) return;
+  const modeToggle = root.querySelector("[data-address-mode-toggle]");
+  const searchInput = root.querySelector("[data-address-search]");
+  const provinceSelect = root.querySelector("[data-address-province]");
+  const districtSelect = root.querySelector("[data-address-district]");
+  const wardSelect = root.querySelector("[data-address-ward]");
+  const districtField = root.querySelector("[data-address-district-field]");
+  const levelGrid = root.querySelector("[data-address-levels]");
+  const feedback = root.querySelector("[data-address-feedback]");
+  if (!modeToggle || !searchInput || !provinceSelect || !districtSelect || !wardSelect) return;
 
-  const refreshDistricts = () => {
-    const districts = Object.keys(ADDRESS_BOOK[provinceSelect.value] || {});
-    const currentDistrict = districtSelect.value;
-    districtSelect.innerHTML = districts.map((district) => `<option value="${esc(district)}">${esc(district)}</option>`).join("");
-    if (districts.includes(currentDistrict)) districtSelect.value = currentDistrict;
-    refreshWards();
+  const matches = (value, normalizedQuery, rawQuery) => {
+    if (!normalizedQuery) return true;
+    const useDiacritics = /[^\u0000-\u007f]/.test(rawQuery);
+    const normalized = useDiacritics
+      ? String(value || "").toLocaleLowerCase("vi").replace(/\s+/g, " ").trim()
+      : normalizeAddressTerm(value);
+    const query = useDiacritics
+      ? String(rawQuery || "").toLocaleLowerCase("vi").replace(/\s+/g, " ").trim()
+      : normalizedQuery;
+    if (query.includes(" ") && normalized.includes(query)) return true;
+    return normalized.split(/[\s/-]+/).some((token) => token.startsWith(query));
   };
-  const refreshWards = () => {
-    const wards = ADDRESS_BOOK[provinceSelect.value]?.[districtSelect.value] || [];
-    const currentWard = wardSelect.value;
-    wardSelect.innerHTML = wards.map((ward) => `<option value="${esc(ward)}">${esc(ward)}</option>`).join("");
-    if (wards.includes(currentWard)) wardSelect.value = currentWard;
+  const setOptions = (select, values, preferred) => {
+    const selected = addressValue(values, preferred);
+    select.innerHTML = addressOptionTags(values, selected);
+    select.value = selected;
+    select.disabled = !values.length;
+    return selected;
   };
 
-  provinceSelect.addEventListener("change", refreshDistricts);
-  districtSelect.addEventListener("change", refreshWards);
+  const refresh = () => {
+    const mode = modeToggle.checked ? "current" : "legacy";
+    const rawQuery = searchInput.value;
+    const query = normalizeAddressTerm(rawQuery);
+    const allProvinces = ADDRESS_DATA[mode] || [];
+    const previousProvince = provinceSelect.value;
+    const previousDistrict = districtSelect.value;
+    const previousWard = wardSelect.value;
+    const provinceDirectMatches = query ? allProvinces.filter((province) => matches(province[0], query, rawQuery)) : [];
+    let provinces = allProvinces;
+
+    if (query) {
+      provinces = provinceDirectMatches.length
+        ? provinceDirectMatches
+        : allProvinces.filter((province) => {
+          if (mode === "current") return province[1].some((ward) => matches(ward, query, rawQuery));
+          return province[1].some(
+            (district) => matches(district[0], query, rawQuery)
+              || district[1].some((ward) => matches(ward, query, rawQuery)),
+          );
+        });
+    }
+
+    const province = setOptions(provinceSelect, provinces.map((entry) => entry[0]), previousProvince);
+    const provinceEntry = allProvinces.find((entry) => entry[0] === province);
+    const provinceMatchesQuery = Boolean(query && provinceEntry && matches(provinceEntry[0], query, rawQuery));
+
+    root.dataset.addressMode = mode;
+    districtField.hidden = mode === "current";
+    levelGrid?.classList.toggle("is-two-level", mode === "current");
+
+    let wards = [];
+    if (mode === "legacy") {
+      districtSelect.required = true;
+      const allDistricts = provinceEntry?.[1] || [];
+      const directDistricts = query && !provinceMatchesQuery
+        ? allDistricts.filter((district) => matches(district[0], query, rawQuery))
+        : [];
+      const districts = query && !provinceMatchesQuery
+        ? (directDistricts.length
+          ? directDistricts
+          : allDistricts.filter((district) => district[1].some((ward) => matches(ward, query, rawQuery))))
+        : allDistricts;
+      const district = setOptions(districtSelect, districts.map((entry) => entry[0]), previousDistrict);
+      districtSelect.disabled = !districts.length;
+      const districtEntry = allDistricts.find((entry) => entry[0] === district);
+      const districtMatchesQuery = Boolean(query && districtEntry && matches(districtEntry[0], query, rawQuery));
+      wards = districtEntry?.[1] || [];
+      if (query && !provinceMatchesQuery && !districtMatchesQuery) {
+        wards = wards.filter((ward) => matches(ward, query, rawQuery));
+      }
+    } else {
+      districtSelect.required = false;
+      districtSelect.disabled = true;
+      districtSelect.innerHTML = '<option value=""></option>';
+      wards = provinceEntry?.[1] || [];
+      if (query && !provinceMatchesQuery) wards = wards.filter((ward) => matches(ward, query, rawQuery));
+    }
+
+    setOptions(wardSelect, wards, previousWard);
+    wardSelect.required = true;
+
+    if (!provinces.length) {
+      feedback.textContent = "Không tìm thấy địa chỉ phù hợp. Hãy thử từ khóa khác hoặc xóa ô tìm kiếm.";
+      feedback.classList.add("is-empty");
+    } else if (query) {
+      feedback.textContent = `Tìm thấy ${fmtNumber(provinces.length)} tỉnh/thành phù hợp · có thể nhập có dấu hoặc không dấu.`;
+      feedback.classList.remove("is-empty");
+    } else {
+      feedback.textContent = addressPickerSummary(mode);
+      feedback.classList.remove("is-empty");
+    }
+  };
+
+  searchInput.addEventListener("input", refresh);
+  provinceSelect.addEventListener("change", refresh);
+  districtSelect.addEventListener("change", refresh);
+  modeToggle.addEventListener("change", refresh);
+  refresh();
 }
 
 function openOrderForm() {
@@ -2930,7 +3108,7 @@ function openOrderForm() {
       </section>
     </div>
   `;
-  bindAddressSelectors();
+  bindAddressPicker(document.querySelector("#orderForm [data-address-picker]"));
   document.querySelectorAll("#orderForm .product-item-row").forEach((row) => syncProductModeRow(row, row.querySelector('[data-field="product_mode"]')?.value, { hydrateCatalog: false }));
   bindOrderFormEnhancements(document.querySelector("#orderForm"));
   refreshOrderPricing(document.querySelector("#orderForm"));
@@ -3017,17 +3195,11 @@ function openCustomerDetail(customerId) {
 }
 
 function customerAddressFields(customer) {
-  const firstProvince = Object.keys(ADDRESS_BOOK)[0];
-  const province = customer.province && ADDRESS_BOOK[customer.province] ? customer.province : firstProvince;
-  const districts = Object.keys(ADDRESS_BOOK[province] || {});
-  const district = customer.district && districts.includes(customer.district) ? customer.district : districts[0];
-  const wards = ADDRESS_BOOK[province]?.[district] || [];
-  const ward = customer.ward && wards.includes(customer.ward) ? customer.ward : wards[0];
-  return `
-    <div class="field"><label>Tỉnh/TP</label><select name="province" id="customerProvinceSelect">${optionTags(Object.keys(ADDRESS_BOOK), province)}</select></div>
-    <div class="field"><label>Quận/Huyện</label><select name="district" id="customerDistrictSelect">${optionTags(districts, district)}</select></div>
-    <div class="field"><label>Phường/Xã</label><select name="ward" id="customerWardSelect">${optionTags(wards, ward)}</select></div>
-  `;
+  return addressPickerTemplate({
+    prefix: "",
+    idPrefix: "customer",
+    value: customer,
+  });
 }
 
 function openCustomerEditor(customerId) {
@@ -3059,7 +3231,7 @@ function openCustomerEditor(customerId) {
       </section>
     </div>
   `;
-  bindAddressSelectors("#customerProvinceSelect", "#customerDistrictSelect", "#customerWardSelect");
+  bindAddressPicker(document.querySelector("#customerEditForm [data-address-picker]"));
   refreshIcons();
 }
 
