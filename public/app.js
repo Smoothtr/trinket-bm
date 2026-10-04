@@ -109,7 +109,7 @@ function persistUiState() {
 
 let goalEditorDraft = null;
 
-const chartColors = ["#2f6c62", "#7c2638", "#b07b28", "#5b4c8f", "#3f7b53", "#b23a48"];
+const chartColors = ["#2F6C62", "#8F1D26", "#A97B22", "#5F72C7", "#3F7B53", "#7A4F91"];
 
 const STATUS_ICONS = {
   tu_van: "message-circle",
@@ -123,14 +123,14 @@ const STATUS_ICONS = {
 };
 
 const STATUS_COLORS = {
-  tu_van: "#5f72c7",
-  cho_coc: "#b47b25",
-  dat_nguon: "#2f6c62",
-  san_xuat: "#7a4f91",
-  cho_giao: "#287a59",
-  dang_giao: "#2f73b8",
-  hoan_tat: "#3f7b53",
-  huy_hoan: "#b23a48",
+  tu_van: "#5F72C7",
+  cho_coc: "#A97B22",
+  dat_nguon: "#2F6C62",
+  san_xuat: "#7A4F91",
+  cho_giao: "#287A59",
+  dang_giao: "#2F73B8",
+  hoan_tat: "#3F7B53",
+  huy_hoan: "#B3261E",
 };
 
 const SHIPMENT_STATUSES = [
@@ -367,6 +367,11 @@ function moneyTone(value) {
   return Number(value || 0) < 0 ? "negative" : "";
 }
 
+function profitTone(value) {
+  const amount = Number(value || 0);
+  return amount < 0 ? "negative" : amount > 0 ? "positive" : "";
+}
+
 function businessTimeParts(value = new Date(), { includeTime = false } = {}) {
   const parsed = value instanceof Date ? value : new Date(value);
   const safeDate = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
@@ -416,11 +421,32 @@ function formatDateInput(value) {
 function parseViDate(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-  const match = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
-  if (!match) return "";
-  const [, day, month, year] = match;
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const viMatch = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+  const year = Number(isoMatch?.[1] || viMatch?.[3]);
+  const month = Number(isoMatch?.[2] || viMatch?.[2]);
+  const day = Number(isoMatch?.[3] || viMatch?.[1]);
+  if (!year || !month || !day) return "";
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year
+    || parsed.getUTCMonth() !== month - 1
+    || parsed.getUTCDate() !== day
+  ) return "";
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function validateDateInput(input) {
+  if (!input) return true;
+  const raw = input.value.trim();
+  const valid = !raw || Boolean(parseViDate(raw));
+  input.setCustomValidity(valid ? "" : "Ngày không tồn tại. Vui lòng nhập đúng dd/mm/yyyy.");
+  return valid;
+}
+
+function formIsValid(form) {
+  form.querySelectorAll(".date-text").forEach(validateDateInput);
+  return form.reportValidity();
 }
 
 function fmtDateTime(value) {
@@ -472,6 +498,62 @@ function canSeeCosts() {
   return ["admin", "accounting", "ops"].includes(state.role);
 }
 
+function canEditCustomUnitCost() {
+  return canSeeCosts() || state.role === "sale";
+}
+
+function canCreateOrders() {
+  return ["admin", "sale"].includes(state.role);
+}
+
+function canEditOrders() {
+  return ["admin", "sale"].includes(state.role);
+}
+
+function canUpdateOrderStatus() {
+  return ["admin", "sale", "ops"].includes(state.role);
+}
+
+function canManageExpenses() {
+  return ["admin", "accounting"].includes(state.role);
+}
+
+function canCreatePayments() {
+  return ["admin", "accounting", "sale"].includes(state.role);
+}
+
+function canManagePayments() {
+  return ["admin", "accounting"].includes(state.role);
+}
+
+function canManageCatalog() {
+  return ["admin", "ops"].includes(state.role);
+}
+
+function canManageShipments() {
+  return ["admin", "ops"].includes(state.role);
+}
+
+function canEditEntity(entity) {
+  return {
+    orders: canEditOrders(),
+    products: canManageCatalog(),
+    customers: ["admin", "sale"].includes(state.role),
+    vendors: canManageCatalog(),
+    shipments: canManageShipments(),
+  }[entity] || false;
+}
+
+function canDeleteEntity(entity) {
+  return {
+    orders: state.role === "admin",
+    products: canManageCatalog(),
+    customers: state.role === "admin",
+    vendors: canManageCatalog(),
+    shipments: canManageShipments(),
+  }[entity] || false;
+}
+
 async function api(path, options = {}) {
   const authHeaders = await window.TrinketFirebase.authHeaders();
   const response = await fetch(path, {
@@ -514,8 +596,7 @@ function showLogin(message = "") {
       <section class="modal auth-screen" role="dialog" aria-modal="true" aria-label="Đăng nhập Trinket" data-auth-lock="true">
         <div class="auth-brand-panel">
           <div class="auth-brand-lockup">
-            <span class="auth-brand-mark" aria-hidden="true">T</span>
-            <span><strong>Trinket</strong><small>Business Manager</small></span>
+            <span class="auth-brand-logo"><img src="/trinket-logo.png" alt="Trinket"><small>Business Manager</small></span>
           </div>
           <div class="auth-brand-copy">
             <p class="eyebrow">Không gian làm việc nội bộ</p>
@@ -554,8 +635,7 @@ function showRequiredPasswordChange(message = "") {
       <section class="modal auth-screen" role="dialog" aria-modal="true" aria-label="Đổi mật khẩu bắt buộc" data-auth-lock="true">
         <div class="auth-brand-panel">
           <div class="auth-brand-lockup">
-            <span class="auth-brand-mark" aria-hidden="true">T</span>
-            <span><strong>Trinket</strong><small>Business Manager</small></span>
+            <span class="auth-brand-logo"><img src="/trinket-logo.png" alt="Trinket"><small>Business Manager</small></span>
           </div>
           <div class="auth-brand-copy">
             <p class="eyebrow">Bảo vệ tài khoản</p>
@@ -593,8 +673,7 @@ function showLoginPasswordChange(message = "", email = "") {
       <section class="modal auth-screen" role="dialog" aria-modal="true" aria-label="Đổi mật khẩu tài khoản" data-auth-lock="true">
         <div class="auth-brand-panel">
           <div class="auth-brand-lockup">
-            <span class="auth-brand-mark" aria-hidden="true">T</span>
-            <span><strong>Trinket</strong><small>Business Manager</small></span>
+            <span class="auth-brand-logo"><img src="/trinket-logo.png" alt="Trinket"><small>Business Manager</small></span>
           </div>
           <div class="auth-brand-copy">
             <p class="eyebrow">Bảo mật tài khoản</p>
@@ -631,6 +710,27 @@ function roleDisplayName(role) {
   return { admin: "Admin / Chủ", sale: "Sale", ops: "Vận hành / Kho", accounting: "Kế toán" }[role] || role;
 }
 
+function syncSessionChrome(session) {
+  const user = session?.user || {};
+  const fallbackName = String(user.email || "Trinket").split("@")[0];
+  const displayName = String(user.displayName || fallbackName || "Trinket").trim();
+  const initials = displayName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(-2)
+    .map((part) => part[0])
+    .join("")
+    .toLocaleUpperCase("vi") || "TR";
+  const accountName = document.querySelector("#sidebarAccountName");
+  const accountRole = document.querySelector("#sidebarAccountRole");
+  const avatar = document.querySelector("#sidebarAvatar");
+  const logoutButton = document.querySelector("#logoutBtn");
+  if (accountName) accountName.textContent = displayName;
+  if (accountRole) accountRole.textContent = roleDisplayName(session?.role || state.role);
+  if (avatar) avatar.textContent = initials;
+  if (logoutButton) logoutButton.hidden = !session?.enabled;
+}
+
 async function enterAuthenticatedApp(session) {
   state.session = session;
   if (session.enabled && session.mustChangePassword) {
@@ -650,12 +750,10 @@ async function enterAuthenticatedApp(session) {
     roleFilter.value = session.role;
     roleFilter.disabled = true;
     roleFilter.title = `Vai trò đăng nhập: ${roleDisplayName(session.role)}`;
-    if (!document.querySelector("#logoutBtn")) {
-      roleFilter.insertAdjacentHTML("afterend", `<button class="ghost" id="logoutBtn" data-action="logout" title="Đăng xuất" aria-label="Đăng xuất"><i data-lucide="log-out"></i></button>`);
-    }
   } else {
     setAuthSessionHint(false);
   }
+  syncSessionChrome(session);
   await loadData();
   render();
   closeModal();
@@ -668,11 +766,16 @@ async function loadData() {
   syncPeriodFilterOptions();
 }
 
-function toast(message) {
+function toast(message, tone = "auto") {
   const node = document.createElement("div");
-  node.className = "toast";
-  node.textContent = message;
+  const resolvedTone = tone === "auto"
+    ? (/^(đã|tạo tài khoản thành công|sản phẩm đã)/i.test(String(message || "").trim()) ? "success" : "warning")
+    : tone;
+  const icon = resolvedTone === "error" ? "circle-alert" : resolvedTone === "warning" ? "triangle-alert" : "circle-check";
+  node.className = `toast is-${resolvedTone}`;
+  node.innerHTML = `<i data-lucide="${icon}" aria-hidden="true"></i><span>${esc(message)}</span>`;
   toastHost.appendChild(node);
+  refreshIcons();
   setTimeout(() => node.remove(), 3200);
 }
 
@@ -835,6 +938,14 @@ function sum(list, getter) {
   return list.reduce((total, item) => total + Number(getter(item) || 0), 0);
 }
 
+function orderRevenue(order) {
+  return Number(order?.net_revenue ?? order?.price ?? 0);
+}
+
+function orderInvoiceTotal(order) {
+  return Number(order?.invoice_total ?? order?.price ?? 0);
+}
+
 function groupBy(list, keyGetter, valueGetter = () => 1) {
   return list.reduce((acc, item) => {
     const key = keyGetter(item) || "Khác";
@@ -882,7 +993,7 @@ function todoItems(baseOrders = state.data.orders.filter((order) => order.status
       tone: "warning",
       label: "Chưa cọc",
       text: `${order.order_code} · ${order.product_name}`,
-      meta: fmtMoney(order.price),
+      meta: fmtMoney(orderInvoiceTotal(order)),
       icon: STATUS_ICONS[order.status],
       metaIcon: "circle-dollar-sign",
       status: order.status,
@@ -912,8 +1023,8 @@ function todoItems(baseOrders = state.data.orders.filter((order) => order.status
 }
 
 function searchSummary(count, label) {
-  if (!state.search.trim()) return "";
-  return `<span class="tag">Tìm "${esc(state.search.trim())}" · ${fmtNumber(count)} ${esc(label)}</span>`;
+  if (!state.search.trim()) return `<span class="tag result-count">${fmtNumber(count)} ${esc(label)}</span>`;
+  return `<span class="tag result-count">Tìm "${esc(state.search.trim())}" · ${fmtNumber(count)} ${esc(label)}</span>`;
 }
 
 function searchNotice(count, label) {
@@ -951,33 +1062,40 @@ function clearSelection(entity) {
 }
 
 function rowSelect(entity, id, label) {
+  if (!canEditEntity(entity) && !canDeleteEntity(entity)) return "";
   return `<input class="row-select" type="checkbox" data-action="toggle-select" data-entity="${esc(entity)}" data-id="${esc(id)}" aria-label="Chọn ${esc(label)}" ${isSelected(entity, id) ? "checked" : ""}>`;
 }
 
 function selectAllBox(entity, ids) {
+  if (!canEditEntity(entity) && !canDeleteEntity(entity)) return "";
   const selected = selectedIds(entity);
   const allVisibleSelected = ids.length > 0 && ids.every((id) => state.selected[entity]?.has(id));
   return `<input class="row-select" type="checkbox" data-action="toggle-select-all" data-entity="${esc(entity)}" data-ids="${esc(ids.join(","))}" aria-label="Chọn tất cả" ${allVisibleSelected ? "checked" : ""} ${ids.length ? "" : "disabled"}>`;
 }
 
 function rowActions(entity, id, label) {
+  const edit = canEditEntity(entity);
+  const remove = canDeleteEntity(entity);
+  if (!edit && !remove) return "";
   return `
     <div class="row-actions">
-      <button class="ghost" data-action="edit-${esc(entity)}" data-id="${esc(id)}" aria-label="Sửa ${esc(label)}" title="Sửa"><i data-lucide="pen-line"></i></button>
-      <button class="ghost danger-link" data-action="delete-${esc(entity)}" data-id="${esc(id)}" aria-label="Xóa ${esc(label)}" title="Xóa"><i data-lucide="trash-2"></i></button>
+      ${edit ? `<button class="ghost" data-action="edit-${esc(entity)}" data-id="${esc(id)}" aria-label="Sửa ${esc(label)}" title="Sửa"><i data-lucide="pen-line"></i></button>` : ""}
+      ${remove ? `<button class="ghost danger-link" data-action="delete-${esc(entity)}" data-id="${esc(id)}" aria-label="Xóa ${esc(label)}" title="Xóa"><i data-lucide="trash-2"></i></button>` : ""}
     </div>
   `;
 }
 
 function bulkBar(entity, label) {
   const count = selectedIds(entity).length;
-  if (!count) return "";
+  const edit = canEditEntity(entity);
+  const remove = canDeleteEntity(entity);
+  if (!count || (!edit && !remove)) return "";
   return `
     <section class="bulk-bar">
       <span><strong>${fmtNumber(count)}</strong> ${esc(label)} đã chọn</span>
       <div class="toolbar-right">
-        <button class="button" data-action="bulk-edit" data-entity="${esc(entity)}"><i data-lucide="pen-line"></i><span>Sửa hàng loạt</span></button>
-        <button class="danger" data-action="bulk-delete" data-entity="${esc(entity)}"><i data-lucide="trash-2"></i><span>Xóa hàng loạt</span></button>
+        ${edit ? `<button class="button" data-action="bulk-edit" data-entity="${esc(entity)}"><i data-lucide="pen-line"></i><span>Sửa hàng loạt</span></button>` : ""}
+        ${remove ? `<button class="danger" data-action="bulk-delete" data-entity="${esc(entity)}"><i data-lucide="trash-2"></i><span>Xóa hàng loạt</span></button>` : ""}
         <button class="ghost" data-action="clear-selection" data-entity="${esc(entity)}"><i data-lucide="x"></i><span>Bỏ chọn</span></button>
       </div>
     </section>
@@ -1065,50 +1183,52 @@ function barChart(entries, formatter = fmtMoney) {
 }
 
 function lineChart(series) {
-  const width = Math.max(720, series.length * 90);
+  const compact = window.matchMedia("(max-width: 767px)").matches;
+  const chartSeries = compact ? series.slice(-6) : series;
+  const width = compact ? Math.max(420, chartSeries.length * 72) : Math.max(720, chartSeries.length * 90);
   const height = 240;
   const pad = 28;
-  const scaleMax = Math.max(1, ...series.flatMap((point) => [point.revenue, point.profit, point.target || 0]));
-  const xStep = series.length > 1 ? (width - pad * 2) / (series.length - 1) : 0;
+  const scaleMax = Math.max(1, ...chartSeries.flatMap((point) => [point.revenue, point.profit, point.target || 0]));
+  const xStep = chartSeries.length > 1 ? (width - pad * 2) / (chartSeries.length - 1) : 0;
   const points = (key) =>
-    series
+    chartSeries
       .map((point, index) => {
         const x = pad + index * xStep;
         const y = height - pad - (point[key] / scaleMax) * (height - pad * 2);
         return `${x},${y}`;
       })
       .join(" ");
-  const latestTarget = series.at(-1)?.target || 0;
+  const latestTarget = chartSeries.at(-1)?.target || 0;
   return `
-    <div class="line-chart-scroll"><svg class="line-chart" style="min-width:${width}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="Doanh thu và lợi nhuận theo tháng">
+    <div class="line-chart-scroll"><svg class="line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Doanh thu và lợi nhuận theo tháng">
       ${[0, 0.25, 0.5, 0.75, 1]
         .map((ratio) => {
           const y = height - pad - ratio * (height - pad * 2);
-          return `<line x1="${pad}" y1="${y}" x2="${width - pad}" y2="${y}" stroke="#ebece6" /><text x="4" y="${y + 4}" font-size="11" fill="#6e6a61">${fmtShortMoney(scaleMax * ratio)}</text>`;
+          return `<line x1="${pad}" y1="${y}" x2="${width - pad}" y2="${y}" stroke="#F0EBE3" /><text x="4" y="${y + 4}" font-size="11" fill="#746F68">${fmtShortMoney(scaleMax * ratio)}</text>`;
         })
         .join("")}
-      <line x1="${pad}" y1="${height - pad}" x2="${width - pad}" y2="${height - pad}" stroke="#dedbd2" />
-      <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${height - pad}" stroke="#dedbd2" />
-      <polyline points="${points("target")}" fill="none" stroke="#b07b28" stroke-width="2" stroke-dasharray="6 6" stroke-linecap="round" stroke-linejoin="round" />
-      <polyline points="${points("revenue")}" fill="none" stroke="#2f6c62" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
-      <polyline points="${points("profit")}" fill="none" stroke="#7c2638" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
-      ${series
+      <line x1="${pad}" y1="${height - pad}" x2="${width - pad}" y2="${height - pad}" stroke="#E8E2DA" />
+      <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${height - pad}" stroke="#E8E2DA" />
+      <polyline points="${points("target")}" fill="none" stroke="#A97B22" stroke-width="1.5" stroke-dasharray="6 5" stroke-linecap="round" stroke-linejoin="round" />
+      <polyline points="${points("revenue")}" fill="none" stroke="#2F6C62" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+      <polyline points="${points("profit")}" fill="none" stroke="#8F1D26" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+      ${chartSeries
         .map((point, index) => {
           const x = pad + index * xStep;
           const revenueY = height - pad - (point.revenue / scaleMax) * (height - pad * 2);
-          return `<circle cx="${x}" cy="${revenueY}" r="4" fill="#2f6c62"><title>Doanh thu T${point.label}: ${fmtMoney(point.revenue)}</title></circle>`;
+          return `<circle cx="${x}" cy="${revenueY}" r="3" fill="#2F6C62"><title>Doanh thu T${point.label}: ${fmtMoney(point.revenue)}</title></circle>`;
         })
         .join("")}
-      ${series
+      ${chartSeries
         .map((point, index) => {
           const x = pad + index * xStep;
-          return `<text x="${x}" y="${height - 6}" text-anchor="middle" font-size="12" fill="#6e6a61">T${esc(point.label)}</text>`;
+          return `<text x="${x}" y="${height - 6}" text-anchor="middle" font-size="11" fill="#746F68">T${esc(point.label)}</text>`;
         })
         .join("")}
     </svg></div>
-    <div class="legend-row"><span class="swatch" style="background:#2f6c62"></span><span>Doanh thu</span><strong></strong></div>
-    <div class="legend-row"><span class="swatch" style="background:#7c2638"></span><span>Lợi nhuận</span><strong></strong></div>
-    <div class="legend-row"><span class="swatch dashed" style="background:#b07b28"></span><span>Mục tiêu tự đặt</span><strong>${fmtMoney(latestTarget)}</strong></div>
+    <div class="legend-row"><span class="swatch" style="background:#2F6C62"></span><span>Doanh thu</span><strong></strong></div>
+    <div class="legend-row"><span class="swatch" style="background:#8F1D26"></span><span>Lợi nhuận</span><strong></strong></div>
+    <div class="legend-row"><span class="swatch dashed" style="background:#A97B22"></span><span>Mục tiêu tự đặt</span><strong>${fmtMoney(latestTarget)}</strong></div>
   `;
 }
 
@@ -1158,7 +1278,7 @@ function renderReceivableList(rows) {
 function pipelineChart(orders) {
   const entries = state.data.meta.order_statuses.map((status) => {
     const items = orders.filter((order) => order.status === status.id);
-    return [status.label, sum(items, (order) => order.price), items.length, status.id];
+    return [status.label, sum(items, orderRevenue), items.length, status.id];
   });
   const max = Math.max(1, ...entries.map(([, value]) => value));
   return `
@@ -1194,7 +1314,7 @@ function marginChart(orders) {
     orders.reduce((acc, order) => {
       const key = order.product_type || "Khác";
       if (!acc[key]) acc[key] = { revenue: 0, profit: 0 };
-      acc[key].revenue += Number(order.price || 0);
+      acc[key].revenue += orderRevenue(order);
       acc[key].profit += Number(order.profit || 0);
       return acc;
     }, {}),
@@ -1233,7 +1353,7 @@ function goalMetric(metric) {
 }
 
 function goalActual(goal, orders) {
-  const revenue = sum(orders, (order) => order.price);
+  const revenue = sum(orders, orderRevenue);
   if (goal.metric === "profit") return sum(orders, (order) => order.profit);
   if (goal.metric === "orders") return orders.length;
   if (goal.metric === "aov") return orders.length ? revenue / orders.length : 0;
@@ -1271,7 +1391,7 @@ function renderGoalProgress(orders) {
     <section class="panel goal-progress-panel">
       <div class="panel-header">
         <div><h2>Tiến độ mục tiêu</h2><p class="small muted">Theo kỳ đang chọn; số liệu thực tế lấy từ deal, mục tiêu do shop cấu hình.</p></div>
-        <button class="ghost" data-action="edit-revenue-targets" title="Cấu hình mục tiêu"><i data-lucide="settings-2"></i><span>Cấu hình</span></button>
+        ${state.role === "admin" ? `<button class="ghost" data-action="edit-revenue-targets" title="Cấu hình mục tiêu"><i data-lucide="settings-2"></i><span>Cấu hình</span></button>` : ""}
       </div>
       <div class="panel-body goal-progress-grid">
         ${goals.map((goal) => {
@@ -1294,16 +1414,15 @@ function renderGoalProgress(orders) {
 function renderDashboard() {
   const orders = filteredOrders({ ignoreStatus: true }).filter((order) => order.status !== "huy_hoan");
   const expenses = periodExpenses();
-  const revenue = sum(orders, (order) => order.price);
+  const revenue = sum(orders, orderRevenue);
   const cogs = sum(orders, (order) => order.total_cost);
   const profit = revenue - cogs;
   const opEx = sum(expenses, (expense) => expense.amount);
   const netProfit = profit - opEx;
   const receivable = sum(orders, (order) => order.balance_due);
-  const aov = orders.length ? revenue / orders.length : 0;
   const margin = revenue ? Math.round((profit / revenue) * 1000) / 10 : 0;
   const productCounts = sortedEntries(groupBy(orders, (order) => order.product_type));
-  const revenueByType = sortedEntries(groupBy(orders, (order) => order.product_type, (order) => order.price));
+  const revenueByType = sortedEntries(groupBy(orders, (order) => order.product_type, orderRevenue));
   const expenseByCategory = sortedEntries(groupBy(expenses, (expense) => expense.category, (expense) => expense.amount));
   const monthlySeries = buildMonthlySeries();
   const previous = previousMonthPeriod(state.period);
@@ -1316,8 +1435,8 @@ function renderDashboard() {
       <section class="kpi-grid">
         ${kpiCard("Tổng doanh thu", fmtMoney(revenue), `${fmtNumber(orders.length)} đơn trong kỳ`, "", { icon: KPI_ICONS.revenue, trend: previousStats && trendFor(revenue, previousStats.revenue, "positive"), action: "switch-view", view: "orders" })}
         ${canSeeCosts() ? kpiCard("Tổng chi phí", fmtMoney(cogs), "Giá vốn + phí ship", "", { icon: KPI_ICONS.cost, trend: previousStats && trendFor(cogs, previousStats.cogs, "risk"), action: "switch-view", view: "vendors" }) : kpiCard("Tổng chi phí", "Ẩn theo quyền", "Chọn Admin/Kế toán để xem", "", { icon: KPI_ICONS.cost })}
-        ${canSeeFinancials() ? kpiCard("Lợi nhuận gộp", fmtMoney(profit), `Biên ${fmtPercent(margin)}`, moneyTone(profit), { icon: KPI_ICONS.profit, trend: previousStats && trendFor(profit, previousStats.profit, "positive"), action: "switch-view", view: "finance" }) : kpiCard("Lợi nhuận gộp", "Ẩn theo quyền", "Trường nhạy cảm", "", { icon: KPI_ICONS.profit })}
-        ${kpiCard("Tiền chờ thu", fmtMoney(receivable), `AOV ${fmtMoney(aov)}`, "", { icon: KPI_ICONS.receivable, trend: previousStats && trendFor(receivable, previousStats.receivable, "risk"), action: "switch-view", view: "finance", filter: "receivable" })}
+        ${canSeeFinancials() ? kpiCard("Lợi nhuận gộp", fmtMoney(profit), `Biên ${fmtPercent(margin)}`, profitTone(profit), { icon: KPI_ICONS.profit, trend: previousStats && trendFor(profit, previousStats.profit, "positive"), action: "switch-view", view: "finance" }) : kpiCard("Lợi nhuận gộp", "Ẩn theo quyền", "Trường nhạy cảm", "", { icon: KPI_ICONS.profit })}
+        ${kpiCard("Tiền chờ thu", fmtMoney(receivable), `AOV ${fmtMoney(orders.length ? revenue / orders.length : 0)}`, "risk", { icon: KPI_ICONS.receivable, trend: previousStats && trendFor(receivable, previousStats.receivable, "risk"), action: "switch-view", view: "finance", filter: "receivable" })}
       </section>
 
       ${renderGoalProgress(orders)}
@@ -1347,7 +1466,7 @@ function renderDashboard() {
             <h2>Doanh thu theo tháng</h2>
             <div class="toolbar-right">
               <span class="tag">Mục tiêu tự đặt</span>
-              <button class="ghost" data-action="edit-revenue-targets" title="Sửa mục tiêu doanh thu"><i data-lucide="target"></i><span>Sửa mục tiêu</span></button>
+              ${state.role === "admin" ? `<button class="ghost" data-action="edit-revenue-targets" title="Sửa mục tiêu doanh thu"><i data-lucide="target"></i><span>Sửa mục tiêu</span></button>` : ""}
             </div>
           </div>
           <div class="panel-body">${lineChart(monthlySeries)}</div>
@@ -1401,7 +1520,7 @@ function buildMonthlySeries() {
     return {
       month,
       label: `${month.slice(5)}/${month.slice(2, 4)}`,
-      revenue: sum(monthOrders, (order) => order.price),
+      revenue: sum(monthOrders, orderRevenue),
       profit: sum(monthOrders, (order) => order.profit),
       target: Number(targets[month] ?? defaultTarget),
     };
@@ -1418,7 +1537,7 @@ function periodStats(period, options = {}) {
     .filter((order) => order.status !== "huy_hoan" && dateMatchesPeriod(order.date_order, period))
     .filter((order) => !options.applySearch || orderMatchesSearch(order));
   const expenses = state.data.expenses.filter((expense) => dateMatchesPeriod(expense.date, period));
-  const revenue = sum(orders, (order) => order.price);
+  const revenue = sum(orders, orderRevenue);
   const cogs = sum(orders, (order) => order.total_cost);
   const profit = revenue - cogs;
   const receivable = sum(orders, (order) => order.balance_due);
@@ -1442,7 +1561,12 @@ function sortHeader(label, key, className = "") {
 }
 
 function ordersTable(orders) {
-  if (!orders.length) return emptyState("inbox", "Không có đơn phù hợp bộ lọc", "Thử đổi kỳ, trạng thái hoặc từ khóa tìm kiếm.", `<button class="button" data-action="new-order"><i data-lucide="plus"></i><span>Tạo deal</span></button>`);
+  if (!orders.length) {
+    const action = canCreateOrders()
+      ? `<button class="button" data-action="new-order"><i data-lucide="plus"></i><span>Tạo deal</span></button>`
+      : "";
+    return emptyState("inbox", "Không có đơn phù hợp bộ lọc", "Thử đổi kỳ, trạng thái hoặc từ khóa tìm kiếm.", action);
+  }
   const orderIds = orders.map((order) => order.id);
   return `
     <table class="orders-table">
@@ -1454,10 +1578,13 @@ function ordersTable(orders) {
           <th>Sản phẩm</th>
           <th>Trạng thái</th>
           ${sortHeader("Due date", "due_date")}
+          ${sortHeader("Tổng thanh toán", "invoice_total", "money")}
+          ${sortHeader("Đã thu", "paid_amount", "money")}
           ${sortHeader("Doanh thu", "price", "money")}
           ${sortHeader("Giá vốn", "total_cost", "money")}
           ${sortHeader("Lãi", "profit", "money")}
           ${sortHeader("Còn thu", "balance_due", "money")}
+          <th>Thao tác</th>
         </tr>
       </thead>
       <tbody>
@@ -1466,15 +1593,18 @@ function ordersTable(orders) {
             (order) => `
           <tr data-action="open-order" data-order-id="${esc(order.id)}">
             <td data-label="Chọn" class="select-col">${rowSelect("orders", order.id, order.order_code)}</td>
-            <td data-label="Mã đơn" class="order-code-cell"><strong>${esc(order.order_code)}</strong><br><span class="small muted">${fmtDate(order.date_order)}</span>${rowActions("orders", order.id, order.order_code)}</td>
+            <td data-label="Mã đơn" class="order-code-cell"><strong>${esc(order.order_code)}</strong><br><span class="small muted">${fmtDate(order.date_order)}</span></td>
             <td data-label="Khách">${esc(order.customer?.full_name || "")}<br><span class="small muted">${esc(order.customer?.phone || "")}</span></td>
             <td data-label="Sản phẩm">${esc(order.product_summary || order.product_name)}<br><span class="small muted">${fmtNumber(order.product_count || 1)} sản phẩm</span></td>
             <td data-label="Trạng thái">${statusPill(order.status)}</td>
             <td data-label="Due date" class="${order.overdue ? "overdue" : ""}">${fmtDate(order.due_date)}<br><span class="small muted">${order.days_since_order} ngày</span></td>
-            <td data-label="Doanh thu" class="money">${fmtMoney(order.price)}</td>
+            <td data-label="Tổng thanh toán" class="money"><strong>${fmtMoney(orderInvoiceTotal(order))}</strong></td>
+            <td data-label="Đã thu" class="money">${fmtMoney(order.paid_amount)}</td>
+            <td data-label="Doanh thu" class="money">${fmtMoney(orderRevenue(order))}</td>
             <td data-label="Giá vốn" class="money">${canSeeCosts() ? (order.total_cost ? fmtMoney(order.total_cost) : `<span class="muted">—</span>`) : "Ẩn"}</td>
             <td data-label="Lãi" class="money ${moneyTone(order.profit)}">${canSeeFinancials() ? fmtMoney(order.profit) : "Ẩn"}</td>
             <td data-label="Còn thu" class="money">${fmtMoney(order.balance_due)}</td>
+            <td data-label="Thao tác" class="table-actions">${rowActions("orders", order.id, order.order_code)}</td>
           </tr>`,
           )
           .join("")}
@@ -1494,25 +1624,27 @@ function renderOrders() {
     <div class="stack">
       <section class="toolbar">
         <div class="toolbar-left">
+          <div class="view-switcher" role="group" aria-label="Kiểu hiển thị Deal">
+            <button class="button ${state.orderView === "table" ? "is-active" : ""}" data-action="set-order-view" data-mode="table"><i data-lucide="table-2"></i><span>Bảng</span></button>
+            <button class="button ${state.orderView === "kanban" ? "is-active" : ""}" data-action="set-order-view" data-mode="kanban"><i data-lucide="columns-3"></i><span>Kanban</span></button>
+          </div>
           <select id="statusFilter">${statusOptions}</select>
           <select id="quickFilter" aria-label="Lọc nhanh">
-            <option value="all" ${state.quickFilter === "all" ? "selected" : ""}>Tất cả</option>
+            <option value="all" ${state.quickFilter === "all" ? "selected" : ""}>Tất cả deal</option>
             <option value="overdue" ${state.quickFilter === "overdue" ? "selected" : ""}>Quá hạn</option>
             <option value="receivable" ${state.quickFilter === "receivable" ? "selected" : ""}>Còn thu</option>
           </select>
-          <button class="button ${state.orderView === "table" ? "is-active" : ""}" data-action="set-order-view" data-mode="table"><i data-lucide="table-2"></i><span>Bảng</span></button>
-          <button class="button ${state.orderView === "kanban" ? "is-active" : ""}" data-action="set-order-view" data-mode="kanban"><i data-lucide="columns-3"></i><span>Kanban</span></button>
           ${searchSummary(orders.length, "deal")}
         </div>
         <div class="toolbar-right">
           <a class="button" href="#" data-action="export-orders"><i data-lucide="download"></i><span>Export CSV</span></a>
-          <button class="primary" data-action="new-order"><i data-lucide="plus"></i><span>Tạo deal</span></button>
+          ${canCreateOrders() ? `<button class="primary" data-action="new-order"><i data-lucide="plus"></i><span>Tạo deal</span></button>` : ""}
         </div>
       </section>
       ${bulkBar("orders", "deal")}
       ${
         state.orderView === "kanban"
-          ? `<section class="kanban">${renderKanban(orders)}</section>`
+          ? `<nav class="kanban-mobile-tabs" aria-label="Chuyển cột trạng thái">${state.data.meta.order_statuses.map((status) => `<button type="button" data-action="scroll-kanban-column" data-status-id="${esc(status.id)}"><span>${esc(status.label)}</span><strong>${orders.filter((order) => order.status === status.id).length}</strong></button>`).join("")}</nav><section class="kanban">${renderKanban(orders)}</section>`
           : `<section class="panel"><div class="table-wrap orders-table-scroll">${ordersTable(orders)}</div></section>`
       }
     </div>
@@ -1529,21 +1661,23 @@ function renderKanban(orders) {
             <span class="kanban-status"><i data-lucide="${esc(STATUS_ICONS[status.id] || "circle")}"></i>${esc(status.label)}</span>
             <span class="tag">${items.length}</span>
           </div>
+          <div class="kanban-summary">Giá trị <strong>${fmtMoney(sum(items, orderInvoiceTotal))}</strong></div>
           ${items
             .map(
               (order) => `
-            <article class="deal-card" draggable="true" data-action="open-order" data-order-id="${esc(order.id)}" style="--status-color:${esc(STATUS_COLORS[order.status] || "#2f6c62")}">
+            <article class="deal-card" draggable="${canUpdateOrderStatus() ? "true" : "false"}" data-action="open-order" data-order-id="${esc(order.id)}" style="--status-color:${esc(STATUS_COLORS[order.status] || "#2f6c62")}">
               <div class="deal-card-top">
                 <strong>${esc(order.order_code)} · ${esc(order.product_summary || order.product_name)}</strong>
                 <i class="drag-handle" data-lucide="grip-vertical" aria-hidden="true"></i>
               </div>
               <span class="muted">${esc(order.customer?.full_name || "")}</span>
-              <span>${fmtMoney(order.price)}${order.balance_due > 0 ? ` · Còn thu ${fmtMoney(order.balance_due)}` : ""}</span>
+              <span>${fmtMoney(orderInvoiceTotal(order))}${order.balance_due > 0 ? ` · Còn thu ${fmtMoney(order.balance_due)}` : ""}</span>
               <span class="muted">Phụ trách: ${esc(order.assignee || "Chưa gán")}</span>
               <span class="${order.overdue ? "overdue" : "muted"}">Due ${fmtDate(order.due_date)}</span>
+              ${canUpdateOrderStatus() ? `<label class="mobile-card-status"><span>Chuyển trạng thái</span><select data-action="ignore-card-click" data-mobile-order-status="${esc(order.id)}" data-previous-status="${esc(order.status)}">${optionTags(state.data.meta.order_statuses, order.status)}</select></label>` : ""}
               <div class="deal-card-actions">
-                <button class="ghost" data-action="edit-orders" data-id="${esc(order.id)}"><i data-lucide="pen-line"></i><span>Sửa</span></button>
-                <button class="ghost danger-link" data-action="delete-orders" data-id="${esc(order.id)}"><i data-lucide="trash-2"></i><span>Xóa</span></button>
+                ${canEditOrders() ? `<button class="ghost" data-action="edit-orders" data-id="${esc(order.id)}"><i data-lucide="pen-line"></i><span>Sửa</span></button>` : ""}
+                ${state.role === "admin" ? `<button class="ghost danger-link" data-action="delete-orders" data-id="${esc(order.id)}"><i data-lucide="trash-2"></i><span>Xóa</span></button>` : ""}
               </div>
             </article>
           `,
@@ -1577,22 +1711,22 @@ function renderCustomers() {
       <section class="panel">
         <div class="panel-header"><h2>Danh sách khách hàng</h2>${searchSummary(customers.length, "khách")}<span class="tag">Gợi ý trùng theo SĐT khi tạo deal</span></div>
         <div class="table-wrap">
-          <table>
+          <table class="stack-table customers-table">
             <thead><tr><th class="select-col">${selectAllBox("customers", customerIds)}</th><th>Khách</th><th>Kênh</th><th>Địa chỉ</th><th>Phân khúc</th><th>Đơn</th><th class="money">Tổng chi tiêu</th><th>Lần mua gần nhất</th><th>Thao tác</th></tr></thead>
             <tbody>
               ${customers
                 .map(
                   (customer) => `
                 <tr data-action="open-customer" data-customer-id="${esc(customer.id)}">
-                  <td class="select-col">${rowSelect("customers", customer.id, customer.full_name)}</td>
-                  <td><strong>${esc(customer.full_name)}</strong><br><span class="small muted">${esc(customer.phone)} · ${esc(customer.account || "-")}</span></td>
-                  <td>${esc(customer.channel)}</td>
-                  <td>${esc([customer.ward, customer.district, customer.province].filter(Boolean).join(", "))}</td>
-                  <td><span class="tag">${esc(customer.segment)}</span></td>
-                  <td>${fmtNumber(customer.order_count)}</td>
-                  <td class="money">${fmtMoney(customer.total_spend)}</td>
-                  <td>${fmtDate(customer.last_order_at)}</td>
-                  <td>${rowActions("customers", customer.id, customer.full_name)}</td>
+                  <td data-label="Chọn" class="select-col">${rowSelect("customers", customer.id, customer.full_name)}</td>
+                  <td data-label="Khách"><strong>${esc(customer.full_name)}</strong><br><span class="small muted">${esc(customer.phone)} · ${esc(customer.account || "-")}</span></td>
+                  <td data-label="Kênh">${esc(customer.channel)}</td>
+                  <td data-label="Địa chỉ" class="hide-sm">${esc([customer.ward, customer.district, customer.province].filter(Boolean).join(", "))}</td>
+                  <td data-label="Phân khúc"><span class="tag">${esc(customer.segment)}</span></td>
+                  <td data-label="Số đơn">${fmtNumber(customer.order_count)}</td>
+                  <td data-label="Tổng chi tiêu" class="money">${fmtMoney(customer.total_spend)}</td>
+                  <td data-label="Mua gần nhất" class="hide-sm">${fmtDate(customer.last_order_at)}</td>
+                  <td data-label="Thao tác">${rowActions("customers", customer.id, customer.full_name)}</td>
                 </tr>
               `,
                 )
@@ -1663,7 +1797,7 @@ function renderMarketPrices() {
           <p class="small muted">Nguồn: ${esc(market.sourceLabel || "N/A")} · ${marketUpdatedAt ? `cập nhật ${fmtMarketTime(marketUpdatedAt)}` : "chưa cập nhật thị trường"}. Giá chỉ đổi khi bấm Cập nhật thị trường.</p>
         </div>
         <div class="toolbar-right">
-          <button class="ghost" data-action="edit-metal-prices" title="Điều chỉnh giá nhập kim loại"><i data-lucide="pen-line"></i><span>Điều chỉnh giá</span></button>
+          ${state.role === "admin" ? `<button class="ghost" data-action="edit-metal-prices" title="Điều chỉnh giá nhập kim loại"><i data-lucide="pen-line"></i><span>Điều chỉnh giá</span></button>` : ""}
           <button class="ghost" data-action="refresh-market-prices" title="Cập nhật giá thị trường"><i data-lucide="refresh-cw"></i><span>Cập nhật thị trường</span></button>
         </div>
       </div>
@@ -1701,9 +1835,18 @@ function renderVendors() {
     })
     .filter((vendor) => !needle || [vendor.name, vendor.type, vendor.contact, vendor.phone, vendor.note].join(" ").toLowerCase().includes(needle));
   const vendorIds = vendorStats.map((vendor) => vendor.id);
+  const totalVendorCost = sum(vendorStats, (vendor) => vendor.cost);
+  const relatedOrderCount = sum(vendorStats, (vendor) => vendor.order_count);
+  const averageVendorCost = relatedOrderCount ? totalVendorCost / relatedOrderCount : 0;
 
   return `
     <div class="stack">
+      <section class="kpi-grid vendor-kpis">
+        ${kpiCard("Nhà cung cấp", fmtNumber(vendorStats.length), "Đang hợp tác", "", { icon: "gem" })}
+        ${canSeeCosts() ? kpiCard("Tổng chi phí nguồn hàng", fmtMoney(totalVendorCost), "Toàn bộ deal", "", { icon: "receipt" }) : kpiCard("Tổng chi phí nguồn hàng", "Ẩn theo quyền", "", "", { icon: "receipt" })}
+        ${kpiCard("Đơn liên quan", fmtNumber(relatedOrderCount), "Lượt gia công / nhập", "", { icon: "clipboard-list" })}
+        ${canSeeCosts() ? kpiCard("Chi phí bình quân", fmtMoney(averageVendorCost), "Trên mỗi đơn", "", { icon: "divide" }) : kpiCard("Chi phí bình quân", "Ẩn theo quyền", "", "", { icon: "divide" })}
+      </section>
       <section class="grid-2">
         <article class="panel">
           <div class="panel-header"><h2>Chi phí theo vendor</h2><span class="tag">Nguồn hàng</span></div>
@@ -1716,23 +1859,23 @@ function renderVendors() {
       </section>
       ${bulkBar("vendors", "NCC")}
       <section class="panel">
-        <div class="panel-header"><h2>Danh bạ nhà cung cấp</h2>${searchSummary(vendorStats.length, "NCC")}<button class="button" data-action="new-vendor"><i data-lucide="plus"></i><span>Thêm NCC</span></button></div>
+        <div class="panel-header"><h2>Danh bạ nhà cung cấp</h2>${searchSummary(vendorStats.length, "NCC")}${canManageCatalog() ? `<button class="button" data-action="new-vendor"><i data-lucide="plus"></i><span>Thêm NCC</span></button>` : ""}</div>
         <div class="table-wrap">
-          <table>
+          <table class="stack-table vendors-table">
             <thead><tr><th class="select-col">${selectAllBox("vendors", vendorIds)}</th><th>Tên</th><th>Loại</th><th>Liên hệ</th><th>Ghi chú</th><th>Đơn liên quan</th><th class="money">Tổng chi phí</th><th>Thao tác</th></tr></thead>
             <tbody>
               ${vendorStats
                 .map(
                   (vendor) => `
                 <tr>
-                  <td class="select-col">${rowSelect("vendors", vendor.id, vendor.name)}</td>
-                  <td><strong>${esc(vendor.name)}</strong><br><span class="small muted">${esc(vendor.address)}</span></td>
-                  <td>${esc(vendor.type)}</td>
-                  <td>${esc(vendor.contact)}<br><span class="small muted">${esc(vendor.phone)}</span></td>
-                  <td>${esc(vendor.note)}</td>
-                  <td>${fmtNumber(vendor.order_count)}</td>
-                  <td class="money">${canSeeCosts() ? fmtMoney(vendor.cost) : "Ẩn"}</td>
-                  <td>${rowActions("vendors", vendor.id, vendor.name)}</td>
+                  <td data-label="Chọn" class="select-col">${rowSelect("vendors", vendor.id, vendor.name)}</td>
+                  <td data-label="Nhà cung cấp"><strong>${esc(vendor.name)}</strong><br><span class="small muted">${esc(vendor.address)}</span></td>
+                  <td data-label="Loại" class="hide-sm">${esc(vendor.type)}</td>
+                  <td data-label="Liên hệ">${esc(vendor.contact)}<br><span class="small muted">${esc(vendor.phone)}</span></td>
+                  <td data-label="Ghi chú" class="hide-sm">${esc(vendor.note)}</td>
+                  <td data-label="Số đơn" class="hide-sm">${fmtNumber(vendor.order_count)}</td>
+                  <td data-label="Tổng chi phí" class="money">${canSeeCosts() ? fmtMoney(vendor.cost) : "Ẩn"}</td>
+                  <td data-label="Thao tác">${rowActions("vendors", vendor.id, vendor.name)}</td>
                 </tr>
               `,
                 )
@@ -1748,7 +1891,7 @@ function renderVendors() {
 function renderFinance() {
   const orders = filteredOrders({ ignoreStatus: true }).filter((order) => order.status !== "huy_hoan");
   const expenses = periodExpenses();
-  const revenue = sum(orders, (order) => order.price);
+  const revenue = sum(orders, orderRevenue);
   const cogs = sum(orders, (order) => order.total_cost);
   const gross = revenue - cogs;
   const opex = sum(expenses, (expense) => expense.amount);
@@ -1761,8 +1904,8 @@ function renderFinance() {
       <section class="kpi-grid">
         ${kpiCard("Doanh thu", fmtMoney(revenue), "Theo kỳ lọc", "", { icon: "banknote" })}
         ${canSeeCosts() ? kpiCard("Giá vốn", fmtMoney(cogs), "Nguồn hàng + ship", "", { icon: "receipt" }) : kpiCard("Giá vốn", "Ẩn theo quyền", "", "", { icon: "receipt" })}
-        ${canSeeFinancials() ? kpiCard("Lợi nhuận thuần", fmtMoney(net), `Chi phí vận hành ${fmtMoney(opex)}`, moneyTone(net), { icon: "piggy-bank" }) : kpiCard("Lợi nhuận thuần", "Ẩn theo quyền", "", "", { icon: "piggy-bank" })}
-        ${kpiCard("Công nợ/COD treo", fmtMoney(receivable), "Còn phải thu", "", { icon: "clock-3" })}
+        ${canSeeFinancials() ? kpiCard("Lợi nhuận thuần", fmtMoney(net), `Chi phí vận hành ${fmtMoney(opex)}`, profitTone(net), { icon: "piggy-bank" }) : kpiCard("Lợi nhuận thuần", "Ẩn theo quyền", "", "", { icon: "piggy-bank" })}
+        ${kpiCard("Công nợ/COD treo", fmtMoney(receivable), "Còn phải thu", "risk", { icon: "clock-3" })}
       </section>
       <section class="grid-2">
         <article class="panel">
@@ -1770,28 +1913,28 @@ function renderFinance() {
           <div class="panel-body">
             <div class="metric-row"><span>Doanh thu</span><strong>${fmtMoney(revenue)}</strong></div>
             <div class="metric-row"><span>Giá vốn</span><strong>${canSeeCosts() ? fmtMoney(cogs) : "Ẩn"}</strong></div>
-            <div class="metric-row"><span>Lợi nhuận gộp</span><strong class="${moneyTone(gross)}">${canSeeFinancials() ? fmtMoney(gross) : "Ẩn"}</strong></div>
+            <div class="metric-row"><span>Lợi nhuận gộp</span><strong class="${profitTone(gross)}">${canSeeFinancials() ? fmtMoney(gross) : "Ẩn"}</strong></div>
             <div class="metric-row"><span>Chi phí vận hành</span><strong>${fmtMoney(opex)}</strong></div>
-            <div class="metric-row"><span>Lợi nhuận thuần</span><strong class="${moneyTone(net)}">${canSeeFinancials() ? fmtMoney(net) : "Ẩn"}</strong></div>
+            <div class="metric-row"><span>Lợi nhuận thuần</span><strong class="${profitTone(net)}">${canSeeFinancials() ? fmtMoney(net) : "Ẩn"}</strong></div>
           </div>
         </article>
-        <article class="panel">
+        ${canManageExpenses() ? `<article class="panel">
           <div class="panel-header"><h2>Thêm chi phí</h2><span class="tag">Chi phí</span></div>
           <div class="panel-body">
             <form id="expenseForm" class="form-grid">
               <div class="field"><label>Ngày</label><input name="date" class="date-text" inputmode="numeric" pattern="\\d{1,2}/\\d{1,2}/\\d{4}" placeholder="dd/mm/yyyy" value="${formatDateInput(businessDateIso())}"></div>
               <div class="field"><label>Nhóm</label><select name="category">${state.data.meta.expense_categories.map((item) => `<option>${esc(item)}</option>`).join("")}</select></div>
               <div class="field full"><label>Diễn giải</label><input name="description" placeholder="Ví dụ: Instagram ads tháng 6"></div>
-              <div class="field"><label>Số tiền</label><input name="amount" type="number" min="0" step="1000" placeholder="0"></div>
+              <div class="field"><label>Số tiền</label><input name="amount" type="number" step="1000" placeholder="0" required></div>
               <div class="field"><label>&nbsp;</label><button class="primary" type="submit"><i data-lucide="plus"></i><span>Ghi nhận</span></button></div>
             </form>
           </div>
-        </article>
+        </article>` : `<article class="panel"><div class="panel-header"><h2>Chi phí</h2><span class="tag">Theo quyền</span></div><div class="panel-body">${emptyState("lock", "Không có quyền cập nhật", "Chỉ Admin và Kế toán được ghi nhận chi phí.")}</div></article>`}
       </section>
       <section class="panel">
         <div class="panel-header"><h2>Công nợ phải thu</h2><span class="tag">Tuổi nợ · ${fmtMoney(receivable)}</span></div>
         <div class="table-wrap">
-          <table>
+          <table class="stack-table receivables-table">
             <thead><tr><th>Khách</th><th>Đơn</th><th>Trạng thái</th><th>Tuổi nợ</th><th class="money">Còn thu</th><th>Nhắc thu</th></tr></thead>
             <tbody>
               ${
@@ -1800,12 +1943,12 @@ function renderFinance() {
                       .map(
                         (order) => `
                   <tr data-action="open-order" data-order-id="${esc(order.id)}">
-                    <td><strong>${esc(order.customer?.full_name || "")}</strong><br><span class="small muted">${esc(order.customer?.phone || "")}</span></td>
-                    <td>${esc(order.order_code)}<br><span class="small muted">${fmtDate(order.date_order)}</span></td>
-                    <td>${statusPill(order.status)}</td>
-                    <td class="${order.debt_age > 14 ? "overdue" : ""}">${order.debt_age} ngày</td>
-                    <td class="money">${fmtMoney(order.balance_due)}</td>
-                    <td><button class="button" data-action="copy-reminder" data-order-id="${esc(order.id)}" title="Sao chép nội dung nhắc thu công nợ"><i data-lucide="message-circle"></i><span>Sao chép lời nhắc</span></button></td>
+                    <td data-label="Khách"><strong>${esc(order.customer?.full_name || "")}</strong><br><span class="small muted">${esc(order.customer?.phone || "")}</span></td>
+                    <td data-label="Deal">${esc(order.order_code)}<br><span class="small muted">${fmtDate(order.date_order)}</span></td>
+                    <td data-label="Trạng thái">${statusPill(order.status)}</td>
+                    <td data-label="Tuổi nợ" class="${order.debt_age > 14 ? "overdue" : ""}">${order.debt_age} ngày</td>
+                    <td data-label="Còn thu" class="money risk">${fmtMoney(order.balance_due)}</td>
+                    <td data-label="Nhắc thu"><button class="button" data-action="copy-reminder" data-order-id="${esc(order.id)}" title="Sao chép nội dung nhắc thu công nợ"><i data-lucide="message-circle"></i><span>Sao chép lời nhắc</span></button></td>
                   </tr>
                 `,
                       )
@@ -1819,11 +1962,11 @@ function renderFinance() {
       <section class="panel">
         <div class="panel-header"><h2>Chi phí vận hành</h2><span class="tag">${fmtMoney(opex)}</span></div>
         <div class="table-wrap">
-          <table>
+          <table class="stack-table expenses-table">
             <thead><tr><th>Ngày</th><th>Nhóm</th><th>Diễn giải</th><th class="money">Số tiền</th><th>Thao tác</th></tr></thead>
             <tbody>${expenses
               .map(
-                (expense) => `<tr class="expense-row"><td>${fmtDate(expense.date)}</td><td>${esc(expense.category)}</td><td>${esc(expense.description)}</td><td class="money">${fmtMoney(expense.amount)}</td><td><div class="row-actions"><button class="ghost" data-action="edit-expense" data-expense-id="${esc(expense.id)}" aria-label="Sửa chi phí" title="Sửa chi phí"><i data-lucide="pen-line"></i></button><button class="ghost danger-link" data-action="delete-expense" data-expense-id="${esc(expense.id)}" aria-label="Xóa chi phí" title="Xóa chi phí"><i data-lucide="trash-2"></i></button></div></td></tr>`,
+                (expense) => `<tr class="expense-row"><td data-label="Ngày">${fmtDate(expense.date)}</td><td data-label="Nhóm">${esc(expense.category)}</td><td data-label="Diễn giải">${esc(expense.description)}</td><td data-label="Số tiền" class="money">${fmtMoney(expense.amount)}</td><td data-label="Thao tác">${canManageExpenses() ? `<div class="row-actions"><button class="ghost" data-action="edit-expense" data-expense-id="${esc(expense.id)}" aria-label="Sửa chi phí" title="Sửa chi phí"><i data-lucide="pen-line"></i></button><button class="ghost danger-link" data-action="delete-expense" data-expense-id="${esc(expense.id)}" aria-label="Xóa chi phí" title="Xóa chi phí"><i data-lucide="trash-2"></i></button></div>` : ""}</td></tr>`,
               )
               .join("") || `<tr><td colspan="5" class="muted">Chưa có chi phí trong kỳ lọc.</td></tr>`}</tbody>
           </table>
@@ -1848,9 +1991,19 @@ function renderShipping() {
     })
     .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
   const shipmentIds = shipments.map((shipment) => shipment.id);
+  const terminalShipmentStatuses = new Set(["delivered", "cancelled", "returned", "failed"]);
+  const runningShipments = shipments.filter((shipment) => !terminalShipmentStatuses.has(shipment.status));
+  const actualShippingCost = sum(shipments, (shipment) => shipment.fee);
+  const codOutstanding = sum(runningShipments, (shipment) => shipment.cod_amount);
 
   return `
     <div class="stack">
+      <section class="kpi-grid shipping-kpis">
+        ${kpiCard("Vận đơn đang chạy", fmtNumber(runningShipments.length), "Đang trên đường", "", { icon: "truck" })}
+        ${kpiCard("Đơn chờ giao", fmtNumber(readyOrders.length), "Đã xong sản xuất", readyOrders.length ? "warning" : "", { icon: "package-check" })}
+        ${kpiCard("Phí vận chuyển thực tế", fmtMoney(actualShippingCost), "Kỳ hiện tại", "", { icon: "receipt" })}
+        ${kpiCard("COD đang treo", fmtMoney(codOutstanding), "Chờ đối soát", codOutstanding > 0 ? "risk" : "", { icon: "hand-coins" })}
+      </section>
       <section class="grid-2">
         <article class="panel">
           <div class="panel-header"><h2>Đơn chờ giao</h2><span class="tag">${readyOrders.length} đơn</span></div>
@@ -1862,7 +2015,7 @@ function renderShipping() {
                       (order) => `
               <div class="metric-row">
                 <span><strong>${esc(order.order_code)}</strong><br><span class="small muted">${esc(order.customer?.full_name)} · ${esc(order.customer?.province || "")}</span></span>
-                <button class="primary" data-action="create-shipment" data-order-id="${esc(order.id)}"><i data-lucide="truck"></i><span>Tạo vận đơn</span></button>
+                ${canManageShipments() ? `<button class="primary" data-action="create-shipment" data-order-id="${esc(order.id)}"><i data-lucide="truck"></i><span>Tạo vận đơn</span></button>` : ""}
               </div>
             `,
                     )
@@ -1885,26 +2038,26 @@ function renderShipping() {
       <section class="panel">
         <div class="panel-header"><h2>Vận đơn</h2>${searchSummary(shipments.length, "vận đơn")}<span class="tag">Theo dõi tự động</span></div>
         <div class="table-wrap">
-          <table>
+          <table class="stack-table shipments-table">
             <thead><tr><th class="select-col">${selectAllBox("shipments", shipmentIds)}</th><th>Mã vận đơn</th><th>Đơn</th><th>Khách</th><th>Trạng thái</th><th>Dự kiến giao</th><th class="money">Cước</th><th>Thao tác</th></tr></thead>
             <tbody>
               ${shipments
                 .map(
                   (shipment) => `
                 <tr>
-                  <td class="select-col">${rowSelect("shipments", shipment.id, shipment.tracking_code)}</td>
-                  <td><strong>${esc(shipment.tracking_code)}</strong><br><span class="small muted">${esc(shipment.service_code)}</span></td>
-                  <td>${esc(shipment.order?.order_code || "")}</td>
-                  <td>${esc(shipment.order?.customer?.full_name || "")}</td>
-                  <td><span class="tag">${esc(shipment.status_label || shipment.status)}</span></td>
-                  <td>${fmtDate(shipment.expected_delivery)}</td>
-                  <td class="money">${fmtMoney(shipment.fee)}</td>
-                  <td>
-                    <div class="row-actions always-visible">
+                  <td data-label="Chọn" class="select-col">${rowSelect("shipments", shipment.id, shipment.tracking_code)}</td>
+                  <td data-label="Mã vận đơn"><strong>${esc(shipment.tracking_code)}</strong><br><span class="small muted">${esc(shipment.service_code)}</span></td>
+                  <td data-label="Deal">${esc(shipment.order?.order_code || "")}</td>
+                  <td data-label="Khách">${esc(shipment.order?.customer?.full_name || "")}</td>
+                  <td data-label="Trạng thái"><span class="tag">${esc(shipment.status_label || shipment.status)}</span></td>
+                  <td data-label="Dự kiến giao">${fmtDate(shipment.expected_delivery)}</td>
+                  <td data-label="Cước" class="money">${fmtMoney(shipment.fee)}</td>
+                  <td data-label="Thao tác">
+                    ${canManageShipments() ? `<div class="row-actions always-visible">
                       <button class="button" data-action="sync-shipment" data-shipment-id="${esc(shipment.id)}"><i data-lucide="refresh-cw"></i><span>Sync</span></button>
                       <button class="ghost" data-action="edit-shipments" data-id="${esc(shipment.id)}" aria-label="Sửa vận đơn" title="Sửa vận đơn"><i data-lucide="pen-line"></i></button>
                       <button class="ghost danger-link" data-action="delete-shipments" data-id="${esc(shipment.id)}" aria-label="Xóa vận đơn" title="Xóa vận đơn"><i data-lucide="trash-2"></i></button>
-                    </div>
+                    </div>` : ""}
                   </td>
                 </tr>
               `,
@@ -1947,24 +2100,24 @@ function renderProductCatalog() {
     <section class="panel">
       <div class="panel-header">
         <div><h2>Mẫu có sẵn</h2><p class="small muted">Danh mục duy nhất dùng trong Deal. Sửa tại đây chỉ áp dụng cho lần chọn tiếp theo.</p></div>
-        <button class="primary" data-action="new-product"><i data-lucide="plus"></i><span>Thêm sản phẩm</span></button>
+        ${canManageCatalog() ? `<button class="primary" data-action="new-product"><i data-lucide="plus"></i><span>Thêm sản phẩm</span></button>` : ""}
       </div>
       <div class="table-wrap">
-        <table class="product-table">
+        <table class="product-table stack-table">
           <thead><tr><th class="select-col">${selectAllBox("products", productIds)}</th><th>Sản phẩm</th><th>Loại / chất liệu</th><th class="money">Giá bán</th><th class="money">Giá vốn</th><th>Tồn kho</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
           <tbody>${products.map((product) => {
             const material = (state.data.settings?.material_catalog || []).find((item) => item.id === product.material_id);
             return `<tr>
-              <td class="select-col">${rowSelect("products", product.id, product.name)}</td>
-              <td><div class="product-catalog-identity">${catalogProductThumbnail(product)}<span><strong>${esc(product.name)}</strong><br><span class="small muted">${esc(product.sku)}</span></span></div></td>
-              <td>${esc(product.type)}<br><span class="small muted">${esc(material?.name || "Chưa gán chất liệu")}</span></td>
-              <td class="money">${fmtMoney(product.default_price)}</td>
-              <td class="money">${canSeeCosts() ? fmtMoney(product.default_cost) : "Ẩn"}</td>
-              <td>${product.track_inventory ? `<strong>${fmtNumber(product.available)}</strong> khả dụng<br><span class="small muted">Tồn ${fmtNumber(product.on_hand)} · Giữ ${fmtNumber(product.reserved)}</span>` : `<span class="muted">Không theo dõi</span>`}</td>
-              <td>${productStockTag(product)}${product.status === "inactive" ? `<br><span class="small muted">Ngừng bán</span>` : ""}</td>
-              <td><div class="row-actions always-visible"><button class="ghost" data-action="adjust-stock" data-product-id="${esc(product.id)}" title="Điều chỉnh tồn"><i data-lucide="package-plus"></i></button><button class="ghost" data-action="edit-product" data-product-id="${esc(product.id)}" title="Sửa sản phẩm"><i data-lucide="pen-line"></i></button><button class="ghost danger-link" data-action="delete-product" data-product-id="${esc(product.id)}" title="Xóa hoặc ngừng bán"><i data-lucide="archive"></i></button></div></td>
+              <td data-label="Chọn" class="select-col">${rowSelect("products", product.id, product.name)}</td>
+              <td data-label="Sản phẩm"><div class="product-catalog-identity">${catalogProductThumbnail(product)}<span><strong>${esc(product.name)}</strong><br><span class="small muted">${esc(product.sku)}</span></span></div></td>
+              <td data-label="Phân loại" class="hide-sm">${esc(product.type)}<br><span class="small muted">${esc(material?.name || "Chưa gán chất liệu")}</span></td>
+              <td data-label="Giá bán" class="money">${fmtMoney(product.default_price)}</td>
+              <td data-label="Giá vốn" class="money hide-sm">${canSeeCosts() ? fmtMoney(product.default_cost) : "Ẩn"}</td>
+              <td data-label="Tồn kho">${product.track_inventory ? `<strong>${fmtNumber(product.available)}</strong> khả dụng<br><span class="small muted">Tồn ${fmtNumber(product.on_hand)} · Giữ ${fmtNumber(product.reserved)}</span>` : `<span class="muted">Không theo dõi</span>`}</td>
+              <td data-label="Trạng thái">${productStockTag(product)}${product.status === "inactive" ? `<br><span class="small muted">Ngừng bán</span>` : ""}</td>
+              <td data-label="Thao tác">${canManageCatalog() ? `<div class="row-actions always-visible"><button class="ghost" data-action="adjust-stock" data-product-id="${esc(product.id)}" title="Điều chỉnh tồn"><i data-lucide="package-plus"></i></button><button class="ghost" data-action="edit-product" data-product-id="${esc(product.id)}" title="Sửa sản phẩm"><i data-lucide="pen-line"></i></button><button class="ghost danger-link" data-action="delete-product" data-product-id="${esc(product.id)}" title="Xóa hoặc ngừng bán"><i data-lucide="archive"></i></button></div>` : ""}</td>
             </tr>`;
-          }).join("") || `<tr><td colspan="8">${emptyState("package-open", "Chưa có sản phẩm", "Thêm mẫu có sẵn để Sale chọn khi tạo Deal.", `<button class="primary" data-action="new-product"><i data-lucide="plus"></i><span>Thêm sản phẩm</span></button>`)}</td></tr>`}</tbody>
+          }).join("") || `<tr><td colspan="8">${emptyState("package-open", "Chưa có sản phẩm", "Thêm mẫu có sẵn để Sale chọn khi tạo Deal.", canManageCatalog() ? `<button class="primary" data-action="new-product"><i data-lucide="plus"></i><span>Thêm sản phẩm</span></button>` : "")}</td></tr>`}</tbody>
         </table>
       </div>
     </section>
@@ -1975,16 +2128,16 @@ function renderProductAttributes() {
   const materials = state.data.settings?.material_catalog || [];
   return `
     <section class="panel">
-      <div class="panel-header"><div><h2>Thuộc tính sản phẩm</h2><p class="small muted">Chất liệu được khai báo một lần và dùng cho cả mẫu có sẵn lẫn mẫu tùy chỉnh.</p></div><button class="button" data-action="new-material"><i data-lucide="plus"></i><span>Thêm chất liệu</span></button></div>
-      <div class="table-wrap"><table><thead><tr><th>Chất liệu</th><th>Nhóm</th><th>Nguồn tham khảo</th><th>Đơn vị</th><th>Ghi chú</th><th>Thao tác</th></tr></thead><tbody>
-        ${materials.map((material) => `<tr><td><strong>${esc(material.name)}</strong></td><td>${esc(material.group)}</td><td>${material.market_key ? `<span class="tag">${esc(material.market_key)}</span>` : "Không liên kết"}</td><td>${material.default_unit === "chi" ? "chỉ" : "gram"}</td><td>${esc(material.note || "-")}</td><td><div class="row-actions always-visible"><button class="ghost" data-action="edit-material" data-material-id="${esc(material.id)}" title="Sửa chất liệu"><i data-lucide="pen-line"></i></button><button class="ghost danger-link" data-action="delete-material" data-material-id="${esc(material.id)}" title="Xóa chất liệu"><i data-lucide="trash-2"></i></button></div></td></tr>`).join("") || `<tr><td colspan="6" class="muted">Chưa có chất liệu.</td></tr>`}
+      <div class="panel-header"><div><h2>Thuộc tính sản phẩm</h2><p class="small muted">Chất liệu được khai báo một lần và dùng cho cả mẫu có sẵn lẫn mẫu tùy chỉnh.</p></div>${canManageCatalog() ? `<button class="button" data-action="new-material"><i data-lucide="plus"></i><span>Thêm chất liệu</span></button>` : ""}</div>
+      <div class="table-wrap"><table class="stack-table"><thead><tr><th>Chất liệu</th><th>Nhóm</th><th>Nguồn tham khảo</th><th>Đơn vị</th><th>Ghi chú</th><th>Thao tác</th></tr></thead><tbody>
+        ${materials.map((material) => `<tr><td data-label="Chất liệu"><strong>${esc(material.name)}</strong></td><td data-label="Nhóm">${esc(material.group)}</td><td data-label="Nguồn giá">${material.market_key ? `<span class="tag">${esc(material.market_key)}</span>` : "Không liên kết"}</td><td data-label="Đơn vị">${material.default_unit === "chi" ? "chỉ" : "gram"}</td><td data-label="Ghi chú">${esc(material.note || "-")}</td><td data-label="Thao tác">${canManageCatalog() ? `<div class="row-actions always-visible"><button class="ghost" data-action="edit-material" data-material-id="${esc(material.id)}" title="Sửa chất liệu"><i data-lucide="pen-line"></i></button><button class="ghost danger-link" data-action="delete-material" data-material-id="${esc(material.id)}" title="Xóa chất liệu"><i data-lucide="trash-2"></i></button></div>` : ""}</td></tr>`).join("") || `<tr><td colspan="6" class="muted">Chưa có chất liệu.</td></tr>`}
       </tbody></table></div>
     </section>`;
 }
 
 function renderInventoryMovements() {
   const movements = state.data.inventory_movements || [];
-  return `<section class="panel"><div class="panel-header"><div><h2>Biến động tồn kho</h2><p class="small muted">Lịch sử nhập, xuất bán và điều chỉnh. Mọi thay đổi tồn đều có lý do.</p></div><span class="tag">${fmtNumber(movements.length)} giao dịch</span></div><div class="table-wrap"><table><thead><tr><th>Thời gian</th><th>Sản phẩm</th><th>Loại</th><th>Số lượng</th><th>Lý do</th><th>Người thực hiện</th></tr></thead><tbody>${movements.map((movement) => `<tr><td>${fmtDateTime(movement.created_at)}</td><td><strong>${esc(movement.product?.name || "-")}</strong><br><span class="small muted">${esc(movement.product?.sku || "")}</span></td><td>${esc({ opening: "Tồn đầu kỳ", receipt: "Nhập kho", sale: "Xuất bán", adjustment: "Điều chỉnh" }[movement.type] || movement.type)}</td><td class="${movement.quantity < 0 ? "negative" : "positive"}"><strong>${movement.quantity > 0 ? "+" : ""}${fmtNumber(movement.quantity)}</strong></td><td>${esc(movement.reason)}</td><td>${esc(movement.created_by)}</td></tr>`).join("") || `<tr><td colspan="6">${emptyState("history", "Chưa có biến động tồn", "Điều chỉnh tồn ở một sản phẩm để bắt đầu ghi nhận lịch sử.")}</td></tr>`}</tbody></table></div></section>`;
+  return `<section class="panel"><div class="panel-header"><div><h2>Biến động tồn kho</h2><p class="small muted">Lịch sử nhập, xuất bán và điều chỉnh. Mọi thay đổi tồn đều có lý do.</p></div><span class="tag">${fmtNumber(movements.length)} giao dịch</span></div><div class="table-wrap"><table class="stack-table"><thead><tr><th>Thời gian</th><th>Sản phẩm</th><th>Loại</th><th>Số lượng</th><th>Lý do</th><th>Người thực hiện</th></tr></thead><tbody>${movements.map((movement) => `<tr><td data-label="Thời gian">${fmtDateTime(movement.created_at)}</td><td data-label="Sản phẩm"><strong>${esc(movement.product?.name || "-")}</strong><br><span class="small muted">${esc(movement.product?.sku || "")}</span></td><td data-label="Loại">${esc({ opening: "Tồn đầu kỳ", receipt: "Nhập kho", sale: "Xuất bán", adjustment: "Điều chỉnh" }[movement.type] || movement.type)}</td><td data-label="Số lượng" class="${movement.quantity < 0 ? "negative" : "positive"}"><strong>${movement.quantity > 0 ? "+" : ""}${fmtNumber(movement.quantity)}</strong></td><td data-label="Lý do">${esc(movement.reason)}</td><td data-label="Người thực hiện">${esc(movement.created_by)}</td></tr>`).join("") || `<tr><td colspan="6">${emptyState("history", "Chưa có biến động tồn", "Điều chỉnh tồn ở một sản phẩm để bắt đầu ghi nhận lịch sử.")}</td></tr>`}</tbody></table></div></section>`;
 }
 
 function renderProducts() {
@@ -2145,12 +2298,12 @@ function renderSettingsAudit() {
     <section class="panel">
       <div class="panel-header"><h2>Audit log</h2><span class="tag">${state.data.audit_logs.length} bản ghi</span></div>
       <div class="table-wrap">
-        <table>
+        <table class="stack-table audit-table">
           <thead><tr><th>Thời gian</th><th>User</th><th>Hành động</th><th>Entity</th><th>ID</th></tr></thead>
           <tbody>
             ${state.data.audit_logs
               .slice(0, 30)
-              .map((log) => `<tr><td>${fmtDateTime(log.created_at)}</td><td>${esc(log.user)}</td><td>${esc(auditActionLabel(log.action))}</td><td>${esc(log.entity)}</td><td>${esc(log.entity_id)}</td></tr>`)
+              .map((log) => `<tr><td data-label="Thời gian">${fmtDateTime(log.created_at)}</td><td data-label="User">${esc(log.user)}</td><td data-label="Hành động">${esc(auditActionLabel(log.action))}</td><td data-label="Entity">${esc(log.entity)}</td><td data-label="ID">${esc(log.entity_id)}</td></tr>`)
               .join("") || `<tr><td colspan="5" class="muted">Chưa có thao tác phát sinh trong store hiện tại.</td></tr>`}
           </tbody>
         </table>
@@ -2251,7 +2404,7 @@ async function refreshAccountsAfterMutation() {
 }
 
 async function saveAdminUserForm(form) {
-  if (!form?.reportValidity()) return;
+  if (!form || !formIsValid(form)) return;
   const submitter = modalHost.querySelector('[type="submit"][form="adminUserForm"]');
   const values = new FormData(form);
   const userId = form.dataset.userId || "";
@@ -2361,11 +2514,28 @@ function render() {
     return;
   }
   viewTitle.textContent = viewNames[state.view];
+  const topbar = document.querySelector(".topbar");
+  if (topbar) topbar.dataset.view = state.view;
   const globalSearch = document.querySelector("#globalSearch");
-  if (globalSearch && globalSearch.value !== state.search) globalSearch.value = state.search;
-  document.querySelectorAll(".nav-item").forEach((button) => {
+  if (globalSearch) {
+    if (globalSearch.value !== state.search) globalSearch.value = state.search;
+    const searchLabels = {
+      orders: "Tìm mã deal, khách, SĐT...",
+      products: "Tìm sản phẩm, SKU...",
+      customers: "Tìm khách hàng, SĐT...",
+      vendors: "Tìm nhà cung cấp...",
+      shipping: "Tìm vận đơn, deal...",
+    };
+    globalSearch.placeholder = searchLabels[state.view] || "Tìm trong màn hình này...";
+  }
+  const periodControl = document.querySelector(".period-filter-control");
+  if (periodControl) periodControl.hidden = !["dashboard", "orders", "finance"].includes(state.view);
+  const newOrderButton = document.querySelector("#newOrderBtn");
+  if (newOrderButton) newOrderButton.hidden = !canCreateOrders() || state.view !== "orders";
+  document.querySelectorAll(".nav-item, .mobile-more-menu [data-view]").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.view === state.view);
   });
+  document.querySelector(".mobile-more-nav")?.classList.toggle("is-active", ["finance", "vendors", "shipping", "settings"].includes(state.view));
 
   const renderers = {
     dashboard: renderDashboard,
@@ -2450,7 +2620,7 @@ function defaultOrderItem() {
     note: "",
     quantity: 1,
     unit_price: Number(product?.default_price || 0),
-    unit_cost: Number(product?.default_cost || 0),
+    unit_cost: canSeeCosts() ? Number(product?.default_cost || 0) : 0,
     size: product?.default_size || "",
     material_id: material?.id || "",
     metal_pricing: { mode: "none", unit: "g", weight: 0, unit_price: 0, material_cost: 0 },
@@ -2541,7 +2711,7 @@ function productItemEditorRow(item, index) {
         <div class="field"><label>Đá / charm</label><input data-field="stone" value="${esc(specs.stone || "")}" placeholder="Zircon trắng, ngọc trai..."></div>
       </div>
       <div class="product-cost-media-grid">
-        <div class="field custom-only"><label>Giá vốn mẫu</label><input data-field="unit_cost" data-money-input inputmode="numeric" value="${moneyInputValue(unitCost)}" placeholder="0"></div>
+        ${canEditCustomUnitCost() ? `<div class="field custom-only"><label>Giá vốn mẫu</label><input data-field="unit_cost" data-money-input inputmode="numeric" value="${moneyInputValue(unitCost)}" placeholder="0"></div>` : ""}
         ${orderItemImageEditor(itemImage)}
       </div>
       <div class="field"><label>Ghi chú yêu cầu sản phẩm</label><textarea data-field="note" rows="2" placeholder="Loại đá, màu, khắc tên, chỉnh thiết kế...">${esc(item.note || "")}</textarea></div>
@@ -2567,78 +2737,158 @@ function orderCommercialEditor(order = null) {
   const items = order?.items?.length ? order.items : [defaultOrderItem()];
   const sourceLines = order?.sourcing_lines?.length ? order.sourcing_lines : [{}];
   const profitRate = order ? Number(order.pricing?.profit_rate ?? 0) : 30;
-  const taxRate = order ? Number(order.pricing?.tax_rate ?? 0) : 0;
-  const price = Number(order?.price ?? items.reduce((total, item) => total + Number(item.unit_price || 0) * Number(item.quantity || 1), 0));
+  const pricingTaxRate = order ? Number(order.pricing?.tax_rate ?? 0) : 0;
+  const itemSubtotal = items.reduce((total, item) => total + Number(item.unit_price || 0) * Number(item.quantity || 1), 0);
+  const quoteV2 = Number(order?.quote?.version || 0) >= 2;
+  const adjustment = quoteV2 ? Number(order.quote.adjustment || 0) : Number(order?.price || itemSubtotal) - itemSubtotal;
+  const shippingPayer = quoteV2 ? order.quote.shipping_payer : "customer";
+  const shippingFee = quoteV2
+    ? Number(order.quote.shipping_fee_configured ?? order.quote.shipping_fee ?? 0)
+    : Number(order?.shipping_cost || 0);
+  const taxRate = quoteV2 ? Number(order.quote.tax_rate || 0) : 0;
+  const taxInclusion = quoteV2 && order.quote.tax_inclusion === "inclusive" ? "inclusive" : "exclusive";
+  const taxBase = quoteV2 && order.quote.tax_base === "products_shipping" ? "products_shipping" : "products";
   return `
     <section class="editor-section field full">
       <div class="editor-section-header">
-        <div><h3>Sản phẩm trong deal</h3><p class="small muted">Chọn mẫu có sẵn hoặc nhập một mẫu tùy chỉnh theo yêu cầu khách.</p></div>
+        <div><h3 class="section-title"><span class="section-kicker" aria-hidden="true">03 · </span><span>Sản phẩm trong deal</span></h3><p class="small muted">Chọn mẫu có sẵn hoặc nhập một mẫu tùy chỉnh theo yêu cầu khách.</p></div>
         <button class="button" type="button" data-action="add-order-item"><i data-lucide="plus"></i><span>Thêm sản phẩm</span></button>
       </div>
       <div class="product-items-list">${items.map(productItemEditorRow).join("")}</div>
     </section>
-    <section class="editor-section field full">
+    <section class="editor-section field full customer-quote-section">
       <div class="editor-section-header">
-        <div><h3>Nguồn hàng / chi phí đầu vào</h3><p class="small muted">Dùng cho mẫu tùy chỉnh hoặc phụ phí gia công, vật liệu và dịch vụ.</p></div>
+        <div><h3 class="section-title"><span class="section-kicker" aria-hidden="true">04 · </span><span>Báo giá khách</span></h3><p class="small muted">Giá báo khách được tự động cộng từ đơn giá sản phẩm và khoản điều chỉnh.</p></div>
+        <span class="tag">Tự tính</span>
+      </div>
+      <div class="quote-grid">
+        <div class="field"><label>Tổng đơn giá sản phẩm</label><output data-pricing-output="item_subtotal">${fmtMoney(itemSubtotal)}</output></div>
+        <div class="field"><label>Điều chỉnh / chiết khấu</label><input name="price_adjustment" data-money-input data-allow-negative inputmode="numeric" value="${moneyInputValue(adjustment)}"><span class="small muted">Nhập số âm để giảm giá.</span></div>
+        <div class="field quote-price"><label>Giá báo khách</label><output data-pricing-output="quote_price">${fmtMoney(order?.price ?? itemSubtotal + adjustment)}</output></div>
+        <div class="field"><label>Người chịu phí ship</label><select name="shipping_payer"><option value="customer" ${shippingPayer === "customer" ? "selected" : ""}>Khách hàng</option><option value="shop" ${shippingPayer === "shop" ? "selected" : ""}>Shop hỗ trợ</option></select></div>
+        <div class="field"><label>Phí ship thu khách</label><input name="shipping_fee" data-money-input inputmode="numeric" value="${moneyInputValue(shippingFee)}"><span class="small muted" data-shipping-fee-note>${shippingPayer === "shop" ? "Hóa đơn sẽ hiển thị miễn phí ship." : "Khoản cộng thêm trên hóa đơn."}</span></div>
+        <div class="field tax-rate-field"><label>Thuế (%)</label><input name="tax_rate" type="number" min="0" max="100" step="0.1" value="${taxRate}"><div class="tax-presets" aria-label="Mức thuế nhanh">${[0, 5, 8, 10].map((rate) => `<button class="ghost" type="button" data-action="set-tax-rate" data-rate="${rate}">${rate}%</button>`).join("")}</div></div>
+        <div class="field"><label>${taxInclusion === "inclusive" ? "Thuế đã gồm trong giá" : "Tiền thuế cộng thêm"}</label><output data-pricing-output="tax_amount">${fmtMoney(order?.tax_amount || 0)}</output></div>
+        <div class="field quote-grand-total"><label>Tổng thanh toán</label><output data-pricing-output="invoice_total">${fmtMoney(order?.invoice_total ?? itemSubtotal + adjustment + shippingFee)}</output></div>
+      </div>
+      <details class="quote-options">
+        <summary>Tùy chọn thuế và vận chuyển</summary>
+        <div class="quote-options-grid">
+          <div class="field"><label>Giá nhập</label><select name="tax_inclusion"><option value="exclusive" ${taxInclusion === "exclusive" ? "selected" : ""}>Chưa gồm thuế</option><option value="inclusive" ${taxInclusion === "inclusive" ? "selected" : ""}>Đã gồm thuế</option></select></div>
+          <div class="field"><label>Thuế tính trên</label><select name="tax_base"><option value="products" ${taxBase === "products" ? "selected" : ""}>Chỉ giá sản phẩm</option><option value="products_shipping" ${taxBase === "products_shipping" ? "selected" : ""}>Giá sản phẩm + phí ship</option></select></div>
+        </div>
+        <p class="small muted" data-tax-formula></p>
+      </details>
+    </section>
+    ${canSeeCosts() ? `<section class="editor-section field full">
+      <div class="editor-section-header">
+        <div><h3 class="section-title"><span class="section-kicker" aria-hidden="true">05 · </span><span>Nguồn hàng và chi phí đầu vào</span></h3><p class="small muted">Dùng cho mẫu tùy chỉnh hoặc phụ phí gia công, vật liệu và dịch vụ.</p></div>
         <button class="button" type="button" data-action="add-source-line"><i data-lucide="plus"></i><span>Thêm chi phí</span></button>
       </div>
       <div class="source-lines">${sourceLines.map(sourceLineEditorRow).join("")}</div>
     </section>
     <section class="editor-section field full pricing-engine">
-      <div class="editor-section-header"><div><h3>Engine báo giá</h3><p class="small muted">Giá đề xuất = (giá vốn + lãi trên giá vốn) + thuế.</p></div><span class="tag">Tự tính</span></div>
+      <div class="editor-section-header"><div><h3 class="section-title"><span class="section-kicker" aria-hidden="true">06 · </span><span>Giá vốn và lợi nhuận</span></h3><p class="small muted"><strong>Engine báo giá:</strong> Giá đề xuất = (giá vốn + lãi trên giá vốn) + thuế.</p></div><span class="tag">Nội bộ · Tự tính</span></div>
       <div class="pricing-grid">
         <div class="field"><label>Tổng giá vốn sản phẩm</label><output data-pricing-output="item_cost">${fmtMoney(order?.item_cost || 0)}</output></div>
         <div class="field"><label>Chi phí nguồn hàng</label><output data-pricing-output="source_cost">${fmtMoney(order?.source_cost || 0)}</output></div>
         ${Number(order?.material_cost || 0) > 0 ? `<div class="field"><label>Chi phí lịch sử Deal cũ</label><output data-pricing-output="legacy_cost">${fmtMoney(order.material_cost)}</output></div>` : ""}
         <div class="field"><label>Phí giao dự kiến</label><input name="shipping_cost" data-money-input inputmode="numeric" value="${moneyInputValue(order?.shipping_cost || 0)}"></div>
         <div class="field"><label>Lãi trên giá vốn (%)</label><input name="profit_rate" type="number" min="0" step="0.1" value="${profitRate}"></div>
-        <div class="field"><label>Thuế (%)</label><input name="tax_rate" type="number" min="0" step="0.1" value="${taxRate}"></div>
+        <div class="field"><label>Thuế (%)</label><input name="pricing_tax_rate" type="number" min="0" max="100" step="0.1" value="${pricingTaxRate}"></div>
         <div class="field"><label>Tiền lãi dự kiến</label><output data-pricing-output="profit_amount">${fmtMoney(order?.pricing?.profit_amount || 0)}</output></div>
-        <div class="field"><label>Tiền thuế</label><output data-pricing-output="tax_amount">${fmtMoney(order?.pricing?.tax_amount || 0)}</output></div>
+        <div class="field"><label>Tiền thuế</label><output data-pricing-output="pricing_tax_amount">${fmtMoney(order?.pricing?.tax_amount || 0)}</output></div>
         <div class="field quote-output"><label>Giá đề xuất</label><output data-pricing-output="suggested_price">${fmtMoney(order?.pricing?.suggested_price || 0)}</output></div>
-        <div class="field quote-price"><label>Giá báo khách</label><input name="price" required data-money-input inputmode="numeric" value="${moneyInputValue(price)}"></div>
       </div>
-      <div class="editor-section-actions"><span class="small muted" data-pricing-output="item_subtotal">Tổng đơn giá sản phẩm: ${fmtMoney(price)}</span><button class="button" type="button" data-action="apply-suggested-price"><i data-lucide="calculator"></i><span>Áp dụng giá đề xuất</span></button></div>
-    </section>
+      <div class="editor-section-actions"><span class="small muted">Giá đề xuất chỉ dùng nội bộ; áp dụng sẽ ghi chênh lệch vào “Điều chỉnh / chiết khấu”.</span><button class="button" type="button" data-action="apply-suggested-price"><i data-lucide="calculator"></i><span>Áp dụng giá đề xuất</span></button></div>
+    </section>` : ""}
   `;
 }
 
 function orderFormTemplate(order = null) {
   const isEdit = Boolean(order);
   const orderId = order?.id || createClientId("ord");
+  const orderCustomer = isEdit
+    ? state.data.customers.find((customer) => customer.id === order.customer_id) || order.customer || {}
+    : {};
   const channelOptions = optionTags(state.data.meta.channels, order?.customer?.channel || "");
   const statusOptions = optionTags(state.data.meta.order_statuses, order?.status || "tu_van");
   return `
     <form id="${isEdit ? "orderEditForm" : "orderForm"}" class="form-grid order-editor-form">
       <input type="hidden" name="id" value="${esc(orderId)}">
-      ${isEdit ? `
-        <div class="field full"><label>Khách</label><select name="customer_id">${optionTags(state.data.customers.map((customer) => ({ id: customer.id, label: `${customer.full_name} · ${customer.phone}` })), order.customer_id)}</select></div>
-      ` : `
-        <div class="field"><label>Tên khách</label><input name="customer_full_name" required placeholder="Nguyễn Minh Anh"></div>
-        <div class="field"><label>Số điện thoại</label><input name="customer_phone" required placeholder="090..."></div>
-        <div class="field"><label>Kênh</label><select name="customer_channel">${channelOptions}</select></div>
-        <div class="field"><label>Account</label><input name="customer_account" placeholder="@instagram"></div>
-        <div class="field full"><label>Địa chỉ giao hàng</label><input name="customer_address" placeholder="Số nhà, tên đường, thôn/xóm..."></div>
-        ${addressPickerTemplate({ initialMode: "legacy" })}
-      `}
-      <div class="field"><label>Trạng thái</label><select name="status">${statusOptions}</select></div>
-      <div class="field"><label>Người phụ trách</label><input name="assignee" value="${esc(order?.assignee || "")}" placeholder="Linh"></div>
-      <div class="field"><label>Ngày đặt</label><input name="date_order" class="date-text" inputmode="numeric" pattern="\\d{1,2}/\\d{1,2}/\\d{4}" placeholder="dd/mm/yyyy" value="${formatDateInput(order?.date_order || businessDateIso())}"></div>
-      <div class="field"><label>Due date</label><input name="due_date" class="date-text" inputmode="numeric" pattern="\\d{1,2}/\\d{1,2}/\\d{4}" placeholder="dd/mm/yyyy" value="${formatDateInput(order?.due_date || "")}"></div>
+      <section class="editor-section field full order-customer-section">
+        <div class="editor-section-header"><div><h3 class="section-title"><span class="section-kicker" aria-hidden="true">01 · </span><span>Thông tin khách hàng</span></h3><p class="small muted">Thông tin liên hệ và địa chỉ nhận hàng của khách.</p></div></div>
+        <div class="form-grid editor-section-grid">
+          ${isEdit ? `
+            <div class="field full">
+              <label>Khách hàng đang liên kết</label>
+              <select name="customer_id" data-order-customer-select required>${optionTags(state.data.customers.map((customer) => ({ id: customer.id, label: `${customer.full_name} · ${customer.phone}` })), order.customer_id)}</select>
+              <p class="small muted">Có thể đổi khách hoặc cập nhật trực tiếp thông tin của khách đang chọn.</p>
+            </div>
+            <div class="form-grid order-customer-edit-fields field full" data-order-customer-fields>
+              ${orderEditableCustomerFields(orderCustomer)}
+            </div>
+          ` : `
+            <div class="field"><label>Tên khách</label><input name="customer_full_name" required placeholder="Nguyễn Minh Anh"></div>
+            <div class="field"><label>Số điện thoại</label><input name="customer_phone" required placeholder="090..."></div>
+            <div class="field"><label>Kênh</label><select name="customer_channel">${channelOptions}</select></div>
+            <div class="field"><label>Account</label><input name="customer_account" placeholder="@instagram"></div>
+            <div class="field full"><label>Địa chỉ giao hàng</label><input name="customer_address" placeholder="Số nhà, tên đường, thôn/xóm..."></div>
+            ${addressPickerTemplate({ initialMode: "legacy" })}
+          `}
+        </div>
+      </section>
+      <section class="editor-section field full order-schedule-section">
+        <div class="editor-section-header"><div><h3 class="section-title"><span class="section-kicker" aria-hidden="true">02 · </span><span>Trạng thái · Phụ trách · Thời gian</span></h3><p class="small muted">Theo dõi người phụ trách và thời hạn hoàn tất deal.</p></div></div>
+        <div class="form-grid editor-section-grid">
+          <div class="field"><label>Trạng thái</label><select name="status">${statusOptions}</select></div>
+          <div class="field"><label>Người phụ trách</label><input name="assignee" value="${esc(order?.assignee || "")}" placeholder="Linh"></div>
+          <div class="field"><label>Ngày đặt</label><input name="date_order" class="date-text" inputmode="numeric" pattern="\\d{1,2}/\\d{1,2}/\\d{4}" placeholder="dd/mm/yyyy" value="${formatDateInput(order?.date_order || businessDateIso())}"></div>
+          <div class="field"><label>Due date</label><input name="due_date" class="date-text" inputmode="numeric" pattern="\\d{1,2}/\\d{1,2}/\\d{4}" placeholder="dd/mm/yyyy" value="${formatDateInput(order?.due_date || "")}"></div>
+        </div>
+      </section>
       ${orderCommercialEditor(order)}
-      ${isEdit ? "" : `
-        <section class="editor-section field full payment-initial-section">
-          <div class="editor-section-header"><div><h3>Cọc / thanh toán ban đầu</h3><p class="small muted">Thông tin thanh toán được quản lý tách riêng và có thể sửa sau trong chi tiết deal.</p></div></div>
+      <section class="editor-section field full payment-initial-section">
+        <div class="editor-section-header"><div><h3 class="section-title"><span class="section-kicker" aria-hidden="true">07 · </span><span>Cọc và ghi chú</span></h3><p class="small muted">Thanh toán ban đầu và các yêu cầu cần lưu cùng deal.</p></div></div>
+        ${isEdit ? "" : `
           <div class="payment-editor-grid">
             <div class="field"><label>Đặt cọc</label><input name="deposit_amount" data-money-input inputmode="numeric" placeholder="0"></div>
             <div class="field"><label>Phương thức cọc</label><select name="deposit_method"><option>Chuyển khoản</option><option>Tiền mặt</option><option>COD</option><option>Ví</option></select></div>
           </div>
-        </section>
-      `}
-      <div class="field full"><label>Yêu cầu chung của deal</label><textarea name="request" placeholder="Gói quà, thời gian cần nhận...">${esc(order?.request || "")}</textarea></div>
-      <div class="field full"><label>Ghi chú nội bộ</label><textarea name="note">${esc(order?.note || "")}</textarea></div>
+        `}
+        <div class="form-grid editor-notes-grid">
+          <div class="field full"><label>Yêu cầu chung của deal</label><textarea name="request" placeholder="Gói quà, thời gian cần nhận...">${esc(order?.request || "")}</textarea></div>
+          <div class="field full"><label>Ghi chú nội bộ</label><textarea name="note">${esc(order?.note || "")}</textarea></div>
+        </div>
+      </section>
     </form>
   `;
+}
+
+function orderEditableCustomerFields(customer = {}) {
+  return `
+    <div class="field"><label>Tên khách</label><input name="customer_full_name" value="${esc(customer.full_name || "")}" required placeholder="Nguyễn Minh Anh"></div>
+    <div class="field"><label>Số điện thoại</label><input name="customer_phone" value="${esc(customer.phone || "")}" required placeholder="090..."></div>
+    <div class="field"><label>Kênh</label><select name="customer_channel">${optionTags(state.data.meta.channels, customer.channel || "")}</select></div>
+    <div class="field"><label>Account</label><input name="customer_account" value="${esc(customer.account || "")}" placeholder="@instagram"></div>
+    <div class="field full"><label>Địa chỉ giao hàng</label><input name="customer_address" value="${esc(customer.address || "")}" placeholder="Số nhà, tên đường, thôn/xóm..."></div>
+    ${addressPickerTemplate({ idPrefix: "orderEditCustomer", value: customer })}
+  `;
+}
+
+function bindOrderEditCustomerFields(form) {
+  const select = form?.querySelector("[data-order-customer-select]");
+  const fields = form?.querySelector("[data-order-customer-fields]");
+  if (!select || !fields) return;
+
+  const bindCurrentAddress = () => bindAddressPicker(fields.querySelector("[data-address-picker]"));
+  select.addEventListener("change", () => {
+    const customer = state.data.customers.find((item) => item.id === select.value);
+    fields.innerHTML = orderEditableCustomerFields(customer || {});
+    bindCurrentAddress();
+    refreshIcons();
+  });
+  bindCurrentAddress();
 }
 
 function collectOrderItems(form, imageOverrides = new Map()) {
@@ -2666,13 +2916,17 @@ function collectOrderItems(form, imageOverrides = new Map()) {
       product_name: row.querySelector('[data-field="product_name"]')?.value.trim() || product?.name || "Sản phẩm",
       quantity,
       unit_price: readMoneyField(row.querySelector('[data-field="unit_price"]')),
-      unit_cost: productMode === "catalog"
-        ? Number(row.dataset.unitCost || 0)
-        : readMoneyField(row.querySelector('[data-field="unit_cost"]')),
+      ...(canSeeCosts() ? {
+        unit_cost: productMode === "catalog"
+          ? Number(row.dataset.unitCost || 0)
+          : readMoneyField(row.querySelector('[data-field="unit_cost"]')),
+        metal_pricing: legacyMetalPricing,
+      } : state.role === "sale" && productMode === "custom" ? {
+        unit_cost: readMoneyField(row.querySelector('[data-field="unit_cost"]')),
+      } : {}),
       size: row.querySelector('[data-field="size"]')?.value.trim() || "",
       note: row.querySelector('[data-field="note"]')?.value.trim() || "",
       material_id: materialId,
-      metal_pricing: legacyMetalPricing,
       image,
       specs: {
         material: material?.name || "",
@@ -2709,12 +2963,27 @@ function refreshOrderPricing(form = document.querySelector(".order-editor-form")
   const shippingCost = readMoneyField(form.elements.shipping_cost);
   const baseCost = itemCost + sourceCost + legacyCost + shippingCost;
   const profitRate = Number(form.elements.profit_rate?.value || 0);
-  const taxRate = Number(form.elements.tax_rate?.value || 0);
+  const pricingTaxRate = Math.min(100, Math.max(0, Number(form.elements.pricing_tax_rate?.value || 0)));
   const profitAmount = Math.round((baseCost * profitRate) / 100 / 1000) * 1000;
-  const beforeTax = baseCost + profitAmount;
-  const taxAmount = Math.round((beforeTax * taxRate) / 100 / 1000) * 1000;
+  const pricingBeforeTax = baseCost + profitAmount;
+  const pricingTaxAmount = Math.round((pricingBeforeTax * pricingTaxRate) / 100 / 1000) * 1000;
   const itemSubtotal = items.reduce((total, item) => total + item.unit_price * item.quantity, 0);
-  const suggestedPrice = baseCost > 0 ? beforeTax + taxAmount : itemSubtotal;
+  const adjustment = readMoneyField(form.elements.price_adjustment);
+  const quotePrice = itemSubtotal + adjustment;
+  const shippingPayer = form.elements.shipping_payer?.value === "shop" ? "shop" : "customer";
+  const configuredShippingFee = readMoneyField(form.elements.shipping_fee);
+  const shippingFee = shippingPayer === "shop" ? 0 : configuredShippingFee;
+  const taxRate = Math.min(100, Math.max(0, Number(form.elements.tax_rate?.value || 0)));
+  const taxInclusion = form.elements.tax_inclusion?.value === "inclusive" ? "inclusive" : "exclusive";
+  const taxBase = form.elements.tax_base?.value === "products_shipping" ? "products_shipping" : "products";
+  const taxableAmount = quotePrice + (taxBase === "products_shipping" ? shippingFee : 0);
+  const taxAmount = !taxRate
+    ? 0
+    : taxInclusion === "inclusive"
+      ? Math.round((taxableAmount * taxRate) / (100 + taxRate))
+      : Math.round((taxableAmount * taxRate) / 100);
+  const invoiceTotal = quotePrice + shippingFee + (taxInclusion === "exclusive" ? taxAmount : 0);
+  const suggestedPrice = baseCost > 0 ? pricingBeforeTax + pricingTaxAmount : itemSubtotal;
   [...form.querySelectorAll(".product-item-row")].forEach((row, index) => {
     const item = items[index];
     const output = row.querySelector("[data-item-cost-output]");
@@ -2724,9 +2993,33 @@ function refreshOrderPricing(form = document.querySelector(".order-editor-form")
   setPricingOutput(form, "source_cost", sourceCost);
   setPricingOutput(form, "legacy_cost", legacyCost);
   setPricingOutput(form, "profit_amount", profitAmount);
+  setPricingOutput(form, "pricing_tax_amount", pricingTaxAmount);
+  setPricingOutput(form, "quote_price", quotePrice);
   setPricingOutput(form, "tax_amount", taxAmount);
+  setPricingOutput(form, "invoice_total", invoiceTotal);
   setPricingOutput(form, "suggested_price", suggestedPrice);
-  setPricingOutput(form, "item_subtotal", itemSubtotal, `Tổng đơn giá sản phẩm: ${fmtMoney(itemSubtotal)}`);
+  setPricingOutput(form, "item_subtotal", itemSubtotal);
+  const modalTotal = form.closest(".modal")?.querySelector("[data-modal-invoice-total]");
+  if (modalTotal) modalTotal.textContent = fmtMoney(invoiceTotal);
+
+  const shippingFeeInput = form.elements.shipping_fee;
+  if (shippingFeeInput) shippingFeeInput.disabled = shippingPayer === "shop";
+  const shippingFeeNote = form.querySelector("[data-shipping-fee-note]");
+  if (shippingFeeNote) shippingFeeNote.textContent = shippingPayer === "shop"
+    ? "Hóa đơn sẽ hiển thị miễn phí ship."
+    : "Khoản cộng thêm trên hóa đơn.";
+  const taxLabel = form.querySelector('[data-pricing-output="tax_amount"]')?.closest(".field")?.querySelector("label");
+  if (taxLabel) taxLabel.textContent = taxInclusion === "inclusive" ? "Thuế đã gồm trong giá" : "Tiền thuế cộng thêm";
+  const formula = form.querySelector("[data-tax-formula]");
+  if (formula) {
+    const baseLabel = taxBase === "products_shipping" ? "giá sản phẩm và phí ship" : "giá sản phẩm";
+    formula.textContent = taxInclusion === "inclusive"
+      ? `Thuế ${fmtPercent(taxRate)} được bóc từ ${baseLabel}; không cộng thêm vào tổng thanh toán.`
+      : `Thuế ${fmtPercent(taxRate)} tính trên ${baseLabel} và được cộng vào tổng thanh toán.`;
+  }
+  form.querySelectorAll('[data-action="set-tax-rate"]').forEach((button) => {
+    button.classList.toggle("is-active", Number(button.dataset.rate) === taxRate);
+  });
 }
 
 function syncProductRowFromCatalog(row) {
@@ -2912,10 +3205,77 @@ async function hydrateProductImages(root = document) {
   }));
 }
 
+function collectOrderQuote(form) {
+  return {
+    version: 2,
+    adjustment: readMoneyField(form.elements.price_adjustment),
+    shipping_fee: readMoneyField(form.elements.shipping_fee),
+    shipping_payer: form.elements.shipping_payer?.value === "shop" ? "shop" : "customer",
+    tax_rate: Math.min(100, Math.max(0, Number(form.elements.tax_rate?.value || 0))),
+    tax_inclusion: form.elements.tax_inclusion?.value === "inclusive" ? "inclusive" : "exclusive",
+    tax_base: form.elements.tax_base?.value === "products_shipping" ? "products_shipping" : "products",
+  };
+}
+
+function enhanceMobileOrderSections(form) {
+  if (!form || form.dataset.mobileSectionsReady === "true") return;
+  form.dataset.mobileSectionsReady = "true";
+  const sections = [...form.querySelectorAll(":scope > .editor-section")];
+  if (!sections.length) return;
+  const shortLabels = ["Khách", "Trạng thái", "Sản phẩm", "Báo giá", "Nguồn hàng", "Nội bộ", "Cọc"];
+  const navigation = document.createElement("nav");
+  navigation.className = "mobile-section-nav";
+  navigation.setAttribute("aria-label", "Đi nhanh đến phần trong deal");
+
+  sections.forEach((section, index) => {
+    const number = String(index + 1).padStart(2, "0");
+    const header = section.querySelector(":scope > .editor-section-header");
+    const title = section.querySelector(":scope > .editor-section-header .section-title span:last-child")?.textContent?.trim() || `Phần ${number}`;
+    section.id ||= `${form.id}-section-${number}`;
+    section.dataset.mobileSection = number;
+
+    if (header) {
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "mobile-section-toggle";
+      toggle.setAttribute("aria-controls", section.id);
+      toggle.setAttribute("aria-label", `Thu gọn hoặc mở ${title}`);
+      toggle.innerHTML = '<i data-lucide="chevron-down"></i>';
+      header.append(toggle);
+      toggle.addEventListener("click", () => {
+        const collapsed = section.classList.toggle("is-mobile-collapsed");
+        toggle.setAttribute("aria-expanded", String(!collapsed));
+      });
+    }
+
+    if (window.matchMedia("(max-width: 767px)").matches && index > 0) {
+      section.classList.add("is-mobile-collapsed");
+      header?.querySelector(".mobile-section-toggle")?.setAttribute("aria-expanded", "false");
+    } else {
+      header?.querySelector(".mobile-section-toggle")?.setAttribute("aria-expanded", "true");
+    }
+
+    const jump = document.createElement("button");
+    jump.type = "button";
+    jump.className = "mobile-section-jump";
+    jump.innerHTML = `<strong>${number}</strong><span>${esc(shortLabels[index] || title)}</span>`;
+    jump.addEventListener("click", () => {
+      section.classList.remove("is-mobile-collapsed");
+      header?.querySelector(".mobile-section-toggle")?.setAttribute("aria-expanded", "true");
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    navigation.append(jump);
+  });
+
+  form.prepend(navigation);
+}
+
 function bindOrderFormEnhancements(form) {
   if (!form) return;
   window.TrinketMoney.bindMoneyInputs(form);
   hydrateProductImages(form);
+  enhanceMobileOrderSections(form);
+  refreshIcons();
 }
 
 function validateOrderImageFile(file) {
@@ -2991,9 +3351,18 @@ function setOrderUploadState(form, uploading) {
   });
   modalHost.querySelectorAll('[data-action="save-order"], [data-action="save-order-edit"]').forEach((button) => {
     button.disabled = uploading;
+    button.classList.toggle("is-loading", uploading);
+    button.setAttribute("aria-busy", uploading ? "true" : "false");
+    const icon = button.querySelector("i");
+    if (icon) {
+      icon.setAttribute("data-lucide", uploading ? "loader-circle" : "save");
+      icon.removeAttribute("data-rendered");
+      icon.innerHTML = "";
+    }
     const label = button.querySelector("span");
-    if (label) label.textContent = uploading ? "Đang tải ảnh..." : "Lưu deal";
+    if (label) label.textContent = uploading ? "Đang lưu..." : "Lưu deal";
   });
+  refreshIcons();
 }
 
 function setCatalogProductUploadState(form, uploading) {
@@ -3120,7 +3489,9 @@ function applySuggestedPrice() {
   const form = document.querySelector(".order-editor-form");
   const output = form?.querySelector('[data-pricing-output="suggested_price"]');
   if (!form || !output) return;
-  setMoneyField(form.elements.price, Number(output.dataset.value || 0));
+  const itemSubtotal = Number(form.querySelector('[data-pricing-output="item_subtotal"]')?.dataset.value || 0);
+  setMoneyField(form.elements.price_adjustment, Number(output.dataset.value || 0) - itemSubtotal);
+  refreshOrderPricing(form);
   toast("Đã áp dụng giá đề xuất");
 }
 
@@ -3238,17 +3609,21 @@ function bindAddressPicker(root) {
 }
 
 function openOrderForm() {
+  if (!canCreateOrders()) {
+    toast("Bạn không có quyền tạo deal.");
+    return;
+  }
   modalHost.innerHTML = `
     <div class="modal-backdrop" data-action="close-modal">
       <section class="modal" role="dialog" aria-modal="true" aria-label="Tạo deal mới">
         <div class="modal-header">
-          <div><h2>Tạo deal mới</h2><p class="muted small">Nếu số điện thoại đã tồn tại, hệ thống tự gắn vào hồ sơ khách cũ.</p></div>
+          <div><h2>Tạo deal mới</h2><p class="muted small">Nhập theo trình tự khách hàng → sản phẩm → báo giá → nguồn hàng. Modal chỉ đóng bằng X, Hủy hoặc sau khi lưu thành công.</p></div>
           <button class="ghost" data-action="close-modal" aria-label="Đóng" title="Đóng"><i data-lucide="x"></i></button>
         </div>
         <div class="modal-body">${orderFormTemplate()}</div>
         <div class="modal-footer">
-          <button class="button" data-action="close-modal">Hủy</button>
-          <button class="primary" data-action="save-order"><i data-lucide="save"></i><span>Lưu deal</span></button>
+          <div class="modal-total"><span>Tổng thanh toán</span><strong data-modal-invoice-total>${fmtMoney(0)}</strong></div>
+          <div class="modal-footer-actions"><button class="button" data-action="close-modal">Hủy</button><button class="primary" data-action="save-order"><i data-lucide="save"></i><span>Lưu deal</span></button></div>
         </div>
       </section>
     </div>
@@ -3276,8 +3651,8 @@ function openCustomerDetail(customerId) {
             <p class="muted small">${esc(customer.phone)} · ${esc(customer.channel)} · ${esc(customer.account || "-")}</p>
           </div>
           <div class="row-actions always-visible">
-            <button class="ghost" data-action="edit-customers" data-id="${esc(customer.id)}" title="Sửa khách"><i data-lucide="pen-line"></i></button>
-            <button class="ghost danger-link" data-action="delete-customers" data-id="${esc(customer.id)}" title="Xóa khách"><i data-lucide="trash-2"></i></button>
+            ${canEditEntity("customers") ? `<button class="ghost" data-action="edit-customers" data-id="${esc(customer.id)}" title="Sửa khách"><i data-lucide="pen-line"></i></button>` : ""}
+            ${canDeleteEntity("customers") ? `<button class="ghost danger-link" data-action="delete-customers" data-id="${esc(customer.id)}" title="Xóa khách"><i data-lucide="trash-2"></i></button>` : ""}
             <button class="ghost" data-action="close-modal" aria-label="Đóng" title="Đóng"><i data-lucide="x"></i></button>
           </div>
         </div>
@@ -3303,7 +3678,7 @@ function openCustomerDetail(customerId) {
                           <td>${esc(order.order_code)}<br><span class="small muted">${fmtDate(order.date_order)}</span></td>
                           <td>${esc(order.product_name)}<br><span class="small muted">${esc(order.product_type)} ${esc(order.size || "")}</span></td>
                           <td>${statusPill(order.status)}</td>
-                          <td class="money">${fmtMoney(order.price)}</td>
+                          <td class="money">${fmtMoney(orderInvoiceTotal(order))}</td>
                           <td class="money">${fmtMoney(order.balance_due)}</td>
                         </tr>
                       `,
@@ -3348,6 +3723,7 @@ function customerAddressFields(customer) {
 }
 
 function openCustomerEditor(customerId) {
+  if (!canEditEntity("customers")) return toast("Bạn không có quyền sửa khách hàng.");
   const customer = state.data.customers.find((item) => item.id === customerId);
   if (!customer) return;
   modalHost.innerHTML = `
@@ -3381,8 +3757,9 @@ function openCustomerEditor(customerId) {
 }
 
 async function saveCustomerEditFromForm() {
+  if (!canEditEntity("customers")) return toast("Bạn không có quyền sửa khách hàng.");
   const form = document.querySelector("#customerEditForm");
-  if (!form?.reportValidity()) return;
+  if (!form || !formIsValid(form)) return;
   const data = new FormData(form);
   const customerId = data.get("id");
   await api(`/api/customers/${customerId}`, {
@@ -3396,6 +3773,7 @@ async function saveCustomerEditFromForm() {
 }
 
 async function deleteCustomer(customerId) {
+  if (!canDeleteEntity("customers")) return toast("Chỉ Admin được xóa khách hàng.");
   const customer = state.data.customers.find((item) => item.id === customerId);
   if (!customer) return;
   const orderCount = state.data.orders.filter((order) => order.customer_id === customerId).length;
@@ -3411,7 +3789,7 @@ async function deleteCustomer(customerId) {
 
 async function saveOrderFromForm() {
   const form = document.querySelector("#orderForm");
-  if (!form.reportValidity()) return;
+  if (!formIsValid(form)) return;
   if (form.dataset.uploading === "true") return;
   if (!window.confirm("Tạo deal mới với thông tin hiện tại?")) return;
   const data = new FormData(form);
@@ -3421,8 +3799,6 @@ async function saveOrderFromForm() {
   try {
     uploadResult = await uploadPendingOrderImages(form);
     const items = collectOrderItems(form, uploadResult.overrides);
-    const sourcingLines = collectSourceLines(form);
-    const price = readMoneyField(form.elements.price);
     const createdOrder = await api("/api/orders", {
       method: "POST",
       body: {
@@ -3439,30 +3815,32 @@ async function saveOrderFromForm() {
         },
         status: data.get("status"),
         items,
-        price,
+        quote: collectOrderQuote(form),
         date_order: parseViDate(data.get("date_order")),
         due_date: parseViDate(data.get("due_date")),
         assignee: data.get("assignee"),
         request: data.get("request"),
         note: data.get("note"),
-        shipping_cost: readMoneyField(form.elements.shipping_cost),
-        pricing: {
-          profit_rate: Number(data.get("profit_rate") || 0),
-          tax_rate: Number(data.get("tax_rate") || 0),
-        },
-        sourcing_lines: sourcingLines,
+        ...(canSeeCosts() ? {
+          shipping_cost: readMoneyField(form.elements.shipping_cost),
+          pricing: {
+            profit_rate: Number(data.get("profit_rate") || 0),
+            tax_rate: Number(data.get("pricing_tax_rate") || 0),
+          },
+          sourcing_lines: collectSourceLines(form),
+        } : {}),
       },
     });
     orderPersisted = true;
     const depositAmount = readMoneyField(form.elements.deposit_amount);
-    if (depositAmount > 0) {
+    if (depositAmount !== 0) {
       try {
         await api("/api/payments", {
           method: "POST",
           body: {
             order_id: createdOrder.id,
             amount: depositAmount,
-            type: depositAmount >= price ? "thanh_toan_du" : "coc",
+            type: depositAmount >= orderInvoiceTotal(createdOrder) ? "thanh_toan_du" : "coc",
             method: data.get("deposit_method"),
           },
         });
@@ -3486,23 +3864,28 @@ async function saveOrderFromForm() {
 }
 
 function openOrderEditor(orderId) {
+  if (!canEditOrders()) {
+    toast("Bạn không có quyền sửa deal.");
+    return;
+  }
   const order = state.data.orders.find((item) => item.id === orderId);
   if (!order) return;
   modalHost.innerHTML = `
     <div class="modal-backdrop" data-action="close-modal">
       <section class="modal" role="dialog" aria-modal="true" aria-label="Sửa deal">
         <div class="modal-header">
-          <div><h2>Sửa deal</h2><p class="muted small">${esc(order.order_code)} · ${esc(order.product_name)}</p></div>
+          <div><h2>Sửa deal</h2><p class="muted small">${esc(order.order_code)} · ${esc(order.product_name)} · chỉ đóng bằng X, Hủy hoặc sau khi lưu thành công.</p></div>
           <button class="ghost" data-action="close-modal" aria-label="Đóng" title="Đóng"><i data-lucide="x"></i></button>
         </div>
         <div class="modal-body">${orderFormTemplate(order)}</div>
         <div class="modal-footer">
-          <button class="button" data-action="close-modal">Hủy</button>
-          <button class="primary" data-action="save-order-edit"><i data-lucide="save"></i><span>Lưu deal</span></button>
+          <div class="modal-total"><span>Tổng thanh toán</span><strong data-modal-invoice-total>${fmtMoney(orderInvoiceTotal(order))}</strong></div>
+          <div class="modal-footer-actions"><button class="button" data-action="close-modal">Hủy</button><button class="primary" data-action="save-order-edit"><i data-lucide="save"></i><span>Lưu deal</span></button></div>
         </div>
       </section>
     </div>
   `;
+  bindOrderEditCustomerFields(document.querySelector("#orderEditForm"));
   document.querySelectorAll("#orderEditForm .product-item-row").forEach((row) => syncProductModeRow(row, row.querySelector('[data-field="product_mode"]')?.value, { hydrateCatalog: false }));
   bindOrderFormEnhancements(document.querySelector("#orderEditForm"));
   refreshOrderPricing(document.querySelector("#orderEditForm"));
@@ -3511,33 +3894,55 @@ function openOrderEditor(orderId) {
 
 async function saveOrderEditFromForm() {
   const form = document.querySelector("#orderEditForm");
-  if (!form?.reportValidity()) return;
+  if (!form || !formIsValid(form)) return;
   if (form.dataset.uploading === "true") return;
   const data = new FormData(form);
   const orderId = data.get("id");
+  const customerId = String(data.get("customer_id") || "");
+  const customer = state.data.customers.find((item) => item.id === customerId);
+  const customerPatch = {
+    full_name: String(data.get("customer_full_name") || "").trim(),
+    phone: String(data.get("customer_phone") || "").trim(),
+    channel: String(data.get("customer_channel") || ""),
+    account: String(data.get("customer_account") || "").trim(),
+    address: String(data.get("customer_address") || "").trim(),
+    province: String(data.get("customer_province") || ""),
+    district: String(data.get("customer_district") || ""),
+    ward: String(data.get("customer_ward") || ""),
+  };
+  const customerChanged = customer && Object.entries(customerPatch)
+    .some(([field, value]) => String(customer[field] || "") !== value);
   let uploadResult = { overrides: new Map(), uploaded: [] };
   let orderPersisted = false;
   setOrderUploadState(form, true);
   try {
     uploadResult = await uploadPendingOrderImages(form);
+    if (customerChanged) {
+      await api(`/api/customers/${customerId}`, {
+        method: "PATCH",
+        body: customerPatch,
+      });
+    }
     await api(`/api/orders/${orderId}`, {
       method: "PATCH",
       body: {
-        customer_id: data.get("customer_id"),
+        customer_id: customerId,
         status: data.get("status"),
         items: collectOrderItems(form, uploadResult.overrides),
-        price: readMoneyField(form.elements.price),
+        quote: collectOrderQuote(form),
         date_order: parseViDate(data.get("date_order")),
         due_date: parseViDate(data.get("due_date")),
         assignee: data.get("assignee"),
         request: data.get("request"),
         note: data.get("note"),
-        shipping_cost: readMoneyField(form.elements.shipping_cost),
-        pricing: {
-          profit_rate: Number(data.get("profit_rate") || 0),
-          tax_rate: Number(data.get("tax_rate") || 0),
-        },
-        sourcing_lines: collectSourceLines(form),
+        ...(canSeeCosts() ? {
+          shipping_cost: readMoneyField(form.elements.shipping_cost),
+          pricing: {
+            profit_rate: Number(data.get("profit_rate") || 0),
+            tax_rate: Number(data.get("pricing_tax_rate") || 0),
+          },
+          sourcing_lines: collectSourceLines(form),
+        } : {}),
       },
     });
     orderPersisted = true;
@@ -3556,6 +3961,10 @@ async function saveOrderEditFromForm() {
 }
 
 async function deleteOrder(orderId) {
+  if (state.role !== "admin") {
+    toast("Chỉ Admin được xóa deal.");
+    return;
+  }
   const order = state.data.orders.find((item) => item.id === orderId);
   if (!order) return;
   if (!window.confirm(`Xóa deal ${order.order_code}? Payment, nguồn hàng và vận đơn của deal này cũng sẽ bị xóa.`)) return;
@@ -3585,7 +3994,7 @@ function openOrderDetail(orderId) {
     )
     .join("");
   const paymentRows = order.payments
-    .map((payment) => `<tr><td>${fmtDateTime(payment.paid_at)}</td><td>${esc(payment.method)}</td><td>${esc(payment.type)}</td><td class="money">${fmtMoney(payment.amount)}</td><td><div class="row-actions always-visible"><button class="ghost" data-action="edit-payment" data-payment-id="${esc(payment.id)}" title="Sửa thanh toán"><i data-lucide="pen-line"></i></button><button class="ghost danger-link" data-action="delete-payment" data-payment-id="${esc(payment.id)}" title="Xóa thanh toán"><i data-lucide="trash-2"></i></button></div></td></tr>`)
+    .map((payment) => `<tr><td>${fmtDateTime(payment.paid_at)}</td><td>${esc(payment.method)}</td><td>${esc(payment.type)}</td><td class="money">${fmtMoney(payment.amount)}</td><td>${canManagePayments() ? `<div class="row-actions always-visible"><button class="ghost" data-action="edit-payment" data-payment-id="${esc(payment.id)}" title="Sửa thanh toán"><i data-lucide="pen-line"></i></button><button class="ghost danger-link" data-action="delete-payment" data-payment-id="${esc(payment.id)}" title="Xóa thanh toán"><i data-lucide="trash-2"></i></button></div>` : ""}</td></tr>`)
     .join("");
   const productRows = (order.items || []).map((item) => {
     const catalog = state.data.products.find((product) => product.id === item.product_id);
@@ -3599,8 +4008,8 @@ function openOrderDetail(orderId) {
   }).join("");
   const shipmentHistory = order.shipment?.status_history
     ?.map(
-      (item) => `
-    <div class="timeline-item">
+      (item, index, history) => `
+    <div class="timeline-item ${index === history.length - 1 ? "is-latest" : ""}">
       <span class="timeline-dot"></span>
       <span><strong>${esc(item.label)}</strong><br><span class="small muted">${fmtDateTime(item.at)}</span></span>
     </div>
@@ -3612,8 +4021,8 @@ function openOrderDetail(orderId) {
     <div class="modal-backdrop" data-action="close-modal">
       <section class="modal" role="dialog" aria-modal="true" aria-label="Chi tiết đơn">
         <div class="modal-header">
-          <div>
-            <h2>${esc(order.order_code)} · ${esc(order.product_summary || order.product_name)}</h2>
+          <div class="detail-modal-heading">
+            <div class="detail-title-row"><h2>${esc(order.order_code)} · ${esc(order.product_summary || order.product_name)}</h2>${statusPill(order.status)}</div>
             <p class="muted small">${esc(order.customer?.full_name || "")} · ${esc(order.customer?.phone || "")}</p>
           </div>
           <button class="ghost" data-action="close-modal" aria-label="Đóng" title="Đóng"><i data-lucide="x"></i></button>
@@ -3625,7 +4034,7 @@ function openOrderDetail(orderId) {
                 <div class="panel-header"><h3>Thông tin deal</h3>${statusPill(order.status)}</div>
                 <div class="panel-body">
                   <div class="grid-2">
-                    <div class="metric-row"><span>Giá bán</span><strong>${fmtMoney(order.price)}</strong></div>
+                    <div class="metric-row"><span>Tổng thanh toán</span><strong>${fmtMoney(orderInvoiceTotal(order))}</strong></div>
                     <div class="metric-row"><span>Đã thu</span><strong>${fmtMoney(order.paid_amount)}</strong></div>
                     <div class="metric-row"><span>Giá vốn</span><strong>${canSeeCosts() ? fmtMoney(order.total_cost) : "Ẩn"}</strong></div>
                     <div class="metric-row"><span>Lợi nhuận</span><strong class="${moneyTone(order.profit)}">${canSeeFinancials() ? fmtMoney(order.profit) : "Ẩn"}</strong></div>
@@ -3638,16 +4047,28 @@ function openOrderDetail(orderId) {
               <section class="panel">
                 <div class="panel-header">
                   <h3>Sản phẩm trong deal</h3>
-                  <button class="ghost" data-action="edit-orders" data-id="${esc(order.id)}"><i data-lucide="pen-line"></i><span>Sửa sản phẩm</span></button>
+                  ${canEditOrders() ? `<button class="ghost" data-action="edit-orders" data-id="${esc(order.id)}"><i data-lucide="pen-line"></i><span>Sửa sản phẩm</span></button>` : ""}
                 </div>
                 <div class="table-wrap"><table><thead><tr><th>Ảnh</th><th>Mã mẫu</th><th>Sản phẩm / ghi chú</th><th>Thông số</th><th>SL</th>${canSeeCosts() ? '<th class="money">Giá vốn</th>' : ""}<th class="money">Thành tiền</th></tr></thead><tbody>${productRows}</tbody></table></div>
               </section>
-              <section class="panel">
-                <div class="panel-header"><h3>Nguồn hàng</h3><div class="toolbar-right"><span class="tag">${order.sourcing_lines.length} dòng</span><button class="ghost" data-action="edit-orders" data-id="${esc(order.id)}"><i data-lucide="pen-line"></i><span>Sửa chi phí</span></button></div></div>
-                <div class="table-wrap"><table><thead><tr><th>Vendor</th><th>Vật liệu</th><th>Trạng thái</th><th class="money">Chi phí</th></tr></thead><tbody>${sourceRows}</tbody></table></div>
+              <section class="panel customer-quote-detail">
+                <div class="panel-header"><h3>Báo giá khách</h3>${canEditOrders() ? `<button class="ghost" data-action="edit-orders" data-id="${esc(order.id)}"><i data-lucide="pen-line"></i><span>Sửa báo giá</span></button>` : ""}</div>
+                <div class="panel-body grid-2">
+                  <div class="metric-row"><span>Tổng đơn giá sản phẩm</span><strong>${fmtMoney(order.item_subtotal)}</strong></div>
+                  <div class="metric-row"><span>Điều chỉnh / chiết khấu</span><strong class="${moneyTone(order.price_adjustment)}">${fmtMoney(order.price_adjustment)}</strong></div>
+                  <div class="metric-row"><span>Giá báo khách</span><strong>${fmtMoney(order.price)}</strong></div>
+                  <div class="metric-row"><span>Phí ship thu khách</span><strong>${order.quote?.shipping_payer === "shop" ? "Shop hỗ trợ" : fmtMoney(order.shipping_fee)}</strong></div>
+                  <div class="metric-row"><span>${order.quote?.tax_inclusion === "inclusive" ? "Thuế đã gồm trong giá" : "Thuế cộng thêm"} (${fmtPercent(order.quote?.tax_rate)})</span><strong>${fmtMoney(order.tax_amount)}</strong></div>
+                  <div class="metric-row"><span>Tổng thanh toán</span><strong class="quote-detail-total">${fmtMoney(orderInvoiceTotal(order))}</strong></div>
+                </div>
               </section>
-              <section class="panel">
-                <div class="panel-header"><h3>Engine báo giá</h3><button class="ghost" data-action="edit-orders" data-id="${esc(order.id)}"><i data-lucide="pen-line"></i><span>Sửa công thức</span></button></div>
+              ${canSeeCosts() ? `<section class="panel">
+                <div class="panel-header"><h3>Nguồn hàng</h3><div class="toolbar-right"><span class="tag">${order.sourcing_lines.length} dòng</span>${canEditOrders() ? `<button class="ghost" data-action="edit-orders" data-id="${esc(order.id)}"><i data-lucide="pen-line"></i><span>Sửa chi phí</span></button>` : ""}</div></div>
+                <div class="table-wrap"><table><thead><tr><th>Vendor</th><th>Vật liệu</th><th>Trạng thái</th><th class="money">Chi phí</th></tr></thead><tbody>${sourceRows}</tbody></table></div>
+              </section>` : ""}
+              ${canSeeCosts() ? `
+              <section class="panel internal-pricing-detail">
+                <div class="panel-header"><h3>Engine báo giá</h3>${canEditOrders() ? `<button class="ghost" data-action="edit-orders" data-id="${esc(order.id)}"><i data-lucide="pen-line"></i><span>Sửa công thức</span></button>` : ""}</div>
                 <div class="panel-body grid-2">
                   <div class="metric-row"><span>Tổng giá vốn sản phẩm</span><strong>${fmtMoney(order.item_cost)}</strong></div>
                   <div class="metric-row"><span>Nguồn hàng / gia công</span><strong>${fmtMoney(order.source_cost)}</strong></div>
@@ -3656,15 +4077,15 @@ function openOrderDetail(orderId) {
                   <div class="metric-row"><span>Tổng giá vốn</span><strong>${fmtMoney(order.total_cost)}</strong></div>
                   <div class="metric-row"><span>Lãi trên giá vốn</span><strong>${fmtPercent(order.pricing?.profit_rate)}</strong></div>
                   <div class="metric-row"><span>Thuế</span><strong>${fmtPercent(order.pricing?.tax_rate)}</strong></div>
-                  <div class="metric-row"><span>Giá đề xuất</span><strong>${fmtMoney(order.pricing?.suggested_price)}</strong></div>
+                  ${canSeeFinancials() ? `<div class="metric-row"><span>Giá đề xuất</span><strong>${fmtMoney(order.pricing?.suggested_price)}</strong></div>` : ""}
                   <div class="metric-row"><span>Giá đã báo</span><strong>${fmtMoney(order.price)}</strong></div>
-                  <div class="metric-row"><span>Lãi thực tế</span><strong class="${moneyTone(order.profit)}">${fmtMoney(order.profit)}</strong></div>
+                  ${canSeeFinancials() ? `<div class="metric-row"><span>Lãi thực tế</span><strong class="${moneyTone(order.profit)}">${fmtMoney(order.profit)}</strong></div>` : ""}
                 </div>
-              </section>
+              </section>` : ""}
               <section class="panel">
                 <div class="panel-header"><h3>Thanh toán</h3><span class="tag">Còn thu ${fmtMoney(order.balance_due)}</span></div>
                 <div class="table-wrap"><table><thead><tr><th>Thời gian</th><th>Phương thức</th><th>Loại</th><th class="money">Số tiền</th><th>Thao tác</th></tr></thead><tbody>${paymentRows || `<tr><td colspan="5" class="muted">Chưa có thanh toán.</td></tr>`}</tbody></table></div>
-                <div class="panel-body">
+                ${canCreatePayments() ? `<div class="panel-body">
                   ${paymentRows ? "" : emptyState("wallet", "Chưa có thanh toán", "Ghi nhận cọc hoặc thanh toán còn lại ngay tại form bên dưới.", `<button class="button" data-action="focus-payment"><i data-lucide="plus"></i><span>Thêm thanh toán</span></button>`)}
                   <form id="paymentForm" class="form-grid">
                     <input type="hidden" name="order_id" value="${esc(order.id)}">
@@ -3673,25 +4094,25 @@ function openOrderDetail(orderId) {
                     <div class="field"><label>Phương thức</label><select name="method"><option>Chuyển khoản</option><option>Tiền mặt</option><option>COD</option><option>Ví</option></select></div>
                     <div class="field"><label>&nbsp;</label><button class="primary" type="submit"><i data-lucide="wallet"></i><span>Ghi nhận</span></button></div>
                   </form>
-                </div>
+                </div>` : ""}
               </section>
             </div>
             <aside class="stack">
               <section class="panel">
                 <div class="panel-header"><h3>Thao tác</h3></div>
                 <div class="panel-body stack">
-                  <button class="button" data-action="edit-orders" data-id="${esc(order.id)}"><i data-lucide="pen-line"></i><span>Sửa deal</span></button>
-                  <button class="button danger-soft" data-action="delete-orders" data-id="${esc(order.id)}"><i data-lucide="trash-2"></i><span>Xóa deal</span></button>
-                  <select id="detailStatus">${state.data.meta.order_statuses.map((status) => `<option value="${esc(status.id)}" ${status.id === order.status ? "selected" : ""}>${esc(status.label)}</option>`).join("")}</select>
-                  <button class="button" data-action="update-order-status" data-order-id="${esc(order.id)}"><i data-lucide="refresh-cw"></i><span>Cập nhật trạng thái</span></button>
+                  ${canEditOrders() ? `<button class="button" data-action="edit-orders" data-id="${esc(order.id)}"><i data-lucide="pen-line"></i><span>Sửa deal</span></button>` : ""}
+                  ${state.role === "admin" ? `<button class="button danger-soft" data-action="delete-orders" data-id="${esc(order.id)}"><i data-lucide="trash-2"></i><span>Xóa deal</span></button>` : ""}
+                  ${canUpdateOrderStatus() ? `<select id="detailStatus">${state.data.meta.order_statuses.map((status) => `<option value="${esc(status.id)}" ${status.id === order.status ? "selected" : ""}>${esc(status.label)}</option>`).join("")}</select>
+                  <button class="button" data-action="update-order-status" data-order-id="${esc(order.id)}"><i data-lucide="refresh-cw"></i><span>Cập nhật trạng thái</span></button>` : ""}
                   <button class="button" data-action="print-receipt" data-order-id="${esc(order.id)}" data-lang="vi"><i data-lucide="receipt-text"></i><span>Hóa đơn VN</span></button>
                   <button class="button" data-action="print-receipt" data-order-id="${esc(order.id)}" data-lang="en"><i data-lucide="receipt"></i><span>Receipt EN</span></button>
                   <p class="muted small">Hóa đơn đang là trang in HTML, dùng Print để lưu PDF từ trình duyệt.</p>
-                  ${
+                  ${canManageShipments() ? (
                     order.shipment
                       ? `<button class="button" data-action="sync-shipment" data-shipment-id="${esc(order.shipment.id)}"><i data-lucide="truck"></i><span>Sync tracking</span></button>`
                       : `<button class="primary" data-action="create-shipment" data-order-id="${esc(order.id)}"><i data-lucide="truck"></i><span>Tạo vận đơn VTP</span></button>`
-                  }
+                  ) : ""}
                 </div>
               </section>
               <section class="panel">
@@ -3705,7 +4126,7 @@ function openOrderDetail(orderId) {
                         <div class="metric-row"><span>COD</span><strong>${fmtMoney(order.shipment.cod_amount)}</strong></div>
                         <div class="timeline">${shipmentHistory}</div>
                       `
-                      : emptyState("truck", "Đơn chưa có vận đơn", "Tạo vận đơn mock Viettel Post để demo phí ship, COD và tracking.", `<button class="primary" data-action="create-shipment" data-order-id="${esc(order.id)}"><i data-lucide="truck"></i><span>Tạo vận đơn</span></button>`)
+                      : emptyState("truck", "Đơn chưa có vận đơn", "Chưa có thông tin vận chuyển.", canManageShipments() ? `<button class="primary" data-action="create-shipment" data-order-id="${esc(order.id)}"><i data-lucide="truck"></i><span>Tạo vận đơn</span></button>` : "")
                   }
                 </div>
               </section>
@@ -3721,6 +4142,7 @@ function openOrderDetail(orderId) {
 }
 
 function openSpecsEditor(orderId) {
+  if (!canEditOrders()) return toast("Bạn không có quyền sửa deal.");
   const order = state.data.orders.find((item) => item.id === orderId);
   if (!order) return;
   const specs = order.product_specs || {};
@@ -3753,8 +4175,9 @@ function openSpecsEditor(orderId) {
 }
 
 async function saveSpecsFromForm() {
+  if (!canEditOrders()) return toast("Bạn không có quyền sửa deal.");
   const form = document.querySelector("#specsForm");
-  if (!form?.reportValidity()) return;
+  if (!form || !formIsValid(form)) return;
   const data = new FormData(form);
   const orderId = data.get("order_id");
   await api(`/api/orders/${orderId}`, {
@@ -3774,6 +4197,7 @@ async function saveSpecsFromForm() {
 }
 
 function openVendorForm() {
+  if (!canManageCatalog()) return toast("Bạn không có quyền thêm nhà cung cấp.");
   modalHost.innerHTML = `
     <div class="modal-backdrop" data-action="close-modal">
       <section class="modal" role="dialog" aria-modal="true" aria-label="Thêm nhà cung cấp">
@@ -3796,8 +4220,9 @@ function openVendorForm() {
 }
 
 async function saveVendorFromForm() {
+  if (!canManageCatalog()) return toast("Bạn không có quyền thêm nhà cung cấp.");
   const form = document.querySelector("#vendorForm");
-  if (!form.reportValidity()) return;
+  if (!formIsValid(form)) return;
   const body = Object.fromEntries(new FormData(form).entries());
   await api("/api/vendors", { method: "POST", body });
   closeModal();
@@ -3807,6 +4232,7 @@ async function saveVendorFromForm() {
 }
 
 function openVendorEditor(vendorId) {
+  if (!canManageCatalog()) return toast("Bạn không có quyền sửa nhà cung cấp.");
   const vendor = state.data.vendors.find((item) => item.id === vendorId);
   if (!vendor) return;
   modalHost.innerHTML = `
@@ -3838,8 +4264,9 @@ function openVendorEditor(vendorId) {
 }
 
 async function saveVendorEditFromForm() {
+  if (!canManageCatalog()) return toast("Bạn không có quyền sửa nhà cung cấp.");
   const form = document.querySelector("#vendorEditForm");
-  if (!form?.reportValidity()) return;
+  if (!form || !formIsValid(form)) return;
   const data = new FormData(form);
   const vendorId = data.get("id");
   await api(`/api/vendors/${vendorId}`, { method: "PATCH", body: Object.fromEntries(data.entries()) });
@@ -3850,6 +4277,7 @@ async function saveVendorEditFromForm() {
 }
 
 async function deleteVendor(vendorId) {
+  if (!canManageCatalog()) return toast("Bạn không có quyền xóa nhà cung cấp.");
   const vendor = state.data.vendors.find((item) => item.id === vendorId);
   if (!vendor) return;
   const lineCount = state.data.order_sourcing_lines.filter((line) => line.vendor_id === vendorId).length;
@@ -3873,6 +4301,7 @@ function materialMarketOptions(selected = "") {
 }
 
 function openMaterialEditor(materialId = "") {
+  if (!canManageCatalog()) return toast("Bạn không có quyền sửa chất liệu.");
   const material = (state.data.settings?.material_catalog || []).find((item) => item.id === materialId) || {
     id: "", name: "", group: "Khác", market_key: "", default_unit: "g", default_price: 0, note: "",
   };
@@ -3888,7 +4317,7 @@ function openMaterialEditor(materialId = "") {
             <div class="field"><label>Nhóm</label><input name="group" value="${esc(material.group)}" required placeholder="Vàng / Bạc / Đá / Khác"></div>
             <div class="field full"><label>Liên kết nguồn giá</label><select name="market_key">${materialMarketOptions(material.market_key)}</select></div>
             <div class="field"><label>Đơn vị mặc định</label><select name="default_unit"><option value="g" ${material.default_unit === "g" ? "selected" : ""}>gram</option><option value="chi" ${material.default_unit === "chi" ? "selected" : ""}>chỉ</option></select></div>
-            <div class="field"><label>Giá cơ sở riêng / đơn vị</label><input name="default_price" type="number" min="0" step="100" value="${Number(material.default_price || 0)}"></div>
+            <div class="field"><label>Giá cơ sở riêng / đơn vị</label><input name="default_price" type="number" step="100" value="${Number(material.default_price || 0)}"></div>
             <div class="field full"><label>Ghi chú</label><textarea name="note">${esc(material.note || "")}</textarea></div>
           </form>
         </div>
@@ -3900,8 +4329,9 @@ function openMaterialEditor(materialId = "") {
 }
 
 async function saveMaterialFromForm() {
+  if (!canManageCatalog()) return toast("Bạn không có quyền sửa chất liệu.");
   const form = document.querySelector("#materialForm");
-  if (!form?.reportValidity()) return;
+  if (!form || !formIsValid(form)) return;
   const data = new FormData(form);
   const materialId = data.get("id");
   await api(materialId ? `/api/materials/${materialId}` : "/api/materials", {
@@ -3922,6 +4352,7 @@ async function saveMaterialFromForm() {
 }
 
 async function deleteMaterial(materialId) {
+  if (!canManageCatalog()) return toast("Bạn không có quyền xóa chất liệu.");
   const material = (state.data.settings?.material_catalog || []).find((item) => item.id === materialId);
   if (!material || !window.confirm(`Xóa chất liệu ${material.name}? Deal cũ vẫn giữ snapshot tên và giá đã dùng.`)) return;
   await api(`/api/materials/${materialId}`, { method: "DELETE" });
@@ -3931,6 +4362,7 @@ async function deleteMaterial(materialId) {
 }
 
 function openProductEditor(productId = "") {
+  if (!canManageCatalog()) return toast("Bạn không có quyền sửa sản phẩm.");
   const product = state.data.products.find((item) => item.id === productId) || { sku: "", name: "", type: "Ring", material_id: "", default_size: "", default_stone: "", default_price: 0, default_cost: 0, status: "active", track_inventory: false, low_stock_threshold: 1, note: "", image: null };
   const editing = Boolean(productId);
   const editorProductId = productId || createClientId("prd");
@@ -3949,8 +4381,8 @@ function openProductEditor(productId = "") {
             <div class="field"><label>Trạng thái bán</label><select name="status"><option value="active" ${product.status === "active" ? "selected" : ""}>Đang bán</option><option value="inactive" ${product.status === "inactive" ? "selected" : ""}>Ngừng bán</option></select></div>
             <div class="field"><label>Size mặc định</label><input name="default_size" value="${esc(product.default_size || "")}" placeholder="12 / 42cm"></div>
             <div class="field"><label>Đá / charm mặc định</label><input name="default_stone" value="${esc(product.default_stone || "")}" placeholder="Zircon trắng..."></div>
-            <div class="field"><label>Giá bán mặc định</label><input name="default_price" type="number" min="0" step="1000" value="${Number(product.default_price || 0)}"></div>
-            <div class="field"><label>Giá vốn mặc định</label><input name="default_cost" type="number" min="0" step="1000" value="${Number(product.default_cost || 0)}"></div>
+            <div class="field"><label>Giá bán mặc định</label><input name="default_price" type="number" step="1000" value="${Number(product.default_price || 0)}"></div>
+            <div class="field"><label>Giá vốn mặc định</label><input name="default_cost" type="number" step="1000" value="${Number(product.default_cost || 0)}"></div>
             ${catalogProductImageEditor(productImage)}
             <div class="field full inventory-toggle"><label class="check-control"><input name="track_inventory" type="checkbox" ${product.track_inventory ? "checked" : ""}><span>Theo dõi tồn kho cho sản phẩm này</span></label></div>
             ${editing ? `<div class="field"><label>Tồn hiện tại</label><output class="field-output">${fmtNumber(product.on_hand)} sản phẩm</output></div>` : `<div class="field"><label>Tồn đầu kỳ</label><input name="initial_stock" type="number" min="0" step="1" value="0"></div>`}
@@ -3967,8 +4399,9 @@ function openProductEditor(productId = "") {
 }
 
 async function saveProductFromForm() {
+  if (!canManageCatalog()) return toast("Bạn không có quyền sửa sản phẩm.");
   const form = document.querySelector("#productForm");
-  if (!form?.reportValidity()) return;
+  if (!form || !formIsValid(form)) return;
   if (form.dataset.uploading === "true") return;
   const data = new FormData(form);
   const productId = data.get("id");
@@ -4016,6 +4449,7 @@ async function saveProductFromForm() {
 }
 
 async function deleteProduct(productId) {
+  if (!canManageCatalog()) return toast("Bạn không có quyền xóa sản phẩm.");
   const product = state.data.products.find((item) => item.id === productId);
   if (!product || !window.confirm(`${product.order_count ? "Ngừng bán" : "Xóa"} sản phẩm ${product.name}? Deal cũ luôn giữ snapshot đã bán.`)) return;
   const result = await api(`/api/products/${productId}`, { method: "DELETE" });
@@ -4029,6 +4463,7 @@ async function deleteProduct(productId) {
 }
 
 function openStockAdjustment(productId) {
+  if (!canManageCatalog()) return toast("Bạn không có quyền điều chỉnh tồn kho.");
   const product = state.data.products.find((item) => item.id === productId);
   if (!product) return;
   modalHost.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal modal-narrow" role="dialog" aria-modal="true" aria-label="Điều chỉnh tồn kho"><div class="modal-header"><div><h2>Điều chỉnh tồn kho</h2><p class="small muted">${esc(product.name)} · hiện có ${fmtNumber(product.on_hand)}, đang giữ ${fmtNumber(product.reserved)}</p></div><button class="ghost" data-action="close-modal" aria-label="Đóng"><i data-lucide="x"></i></button></div><div class="modal-body"><form id="stockAdjustmentForm" class="form-grid"><input type="hidden" name="product_id" value="${esc(product.id)}"><div class="field"><label>Loại biến động</label><select name="type"><option value="receipt">Nhập thêm</option><option value="adjustment">Điều chỉnh tăng/giảm</option></select></div><div class="field"><label>Số lượng thay đổi</label><input name="quantity" type="number" step="1" required placeholder="VD: 5 hoặc -2"></div><div class="field full"><label>Lý do</label><input name="reason" required placeholder="Nhập hàng mới, kiểm kê, hư hỏng..."></div></form></div><div class="modal-footer"><button class="button" data-action="close-modal">Hủy</button><button class="primary" data-action="save-stock-adjustment"><i data-lucide="save"></i><span>Lưu biến động</span></button></div></section></div>`;
@@ -4036,8 +4471,9 @@ function openStockAdjustment(productId) {
 }
 
 async function saveStockAdjustment() {
+  if (!canManageCatalog()) return toast("Bạn không có quyền điều chỉnh tồn kho.");
   const form = document.querySelector("#stockAdjustmentForm");
-  if (!form?.reportValidity()) return;
+  if (!form || !formIsValid(form)) return;
   const data = new FormData(form);
   await api("/api/inventory/adjustments", { method: "POST", body: { product_id: data.get("product_id"), type: data.get("type"), quantity: Number(data.get("quantity")), reason: data.get("reason") } });
   closeModal();
@@ -4084,6 +4520,7 @@ function syncMetalRuleRow(row) {
 }
 
 function openMetalPriceEditor() {
+  if (state.role !== "admin") return toast("Chỉ Admin được điều chỉnh giá kim loại.");
   const market = state.data.market_prices || {};
   const rules = state.data.settings?.metal_price_rules || {};
   const groups = [
@@ -4120,6 +4557,7 @@ function openMetalPriceEditor() {
 }
 
 async function saveMetalPricesFromForm() {
+  if (state.role !== "admin") return toast("Chỉ Admin được điều chỉnh giá kim loại.");
   const form = document.querySelector("#metalPriceForm");
   if (!form) return;
   const rules = {};
@@ -4192,6 +4630,7 @@ function renderRevenueTargetEditor() {
 }
 
 function openRevenueTargetEditor() {
+  if (state.role !== "admin") return toast("Chỉ Admin được cấu hình mục tiêu.");
   const settings = state.data.settings || {};
   goalEditorDraft = {
     months: [...(settings.goal_months || buildMonthlySeries().map((point) => point.month))],
@@ -4242,8 +4681,9 @@ function deleteBusinessGoal(goalId) {
 }
 
 async function saveRevenueTargetsFromForm() {
+  if (state.role !== "admin") return toast("Chỉ Admin được cấu hình mục tiêu.");
   const form = document.querySelector("#revenueTargetForm");
-  if (!form?.reportValidity()) return;
+  if (!form || !formIsValid(form)) return;
   syncGoalEditorDraft();
   const revenueGoal = goalEditorDraft.goals.find((goal) => goal.metric === "revenue");
   await api("/api/settings", {
@@ -4270,6 +4710,7 @@ async function refreshMarketPrices() {
 }
 
 async function createShipment(orderId) {
+  if (!canManageShipments()) return toast("Bạn không có quyền tạo vận đơn.");
   const order = state.data.orders.find((item) => item.id === orderId);
   if (!order) return;
   const cod = order.balance_due || 0;
@@ -4291,6 +4732,7 @@ async function createShipment(orderId) {
 }
 
 async function syncShipment(shipmentId) {
+  if (!canManageShipments()) return toast("Bạn không có quyền đồng bộ vận đơn.");
   const shipment = await api(`/api/shipments/${shipmentId}/tracking-sync`, { method: "POST", body: {} });
   await loadData();
   toast(`Đã đồng bộ: ${shipment.status_label}`);
@@ -4300,6 +4742,7 @@ async function syncShipment(shipmentId) {
 }
 
 function openShipmentEditor(shipmentId) {
+  if (!canManageShipments()) return toast("Bạn không có quyền sửa vận đơn.");
   const shipment = state.data.shipments.find((item) => item.id === shipmentId);
   if (!shipment) return;
   const order = state.data.orders.find((item) => item.id === shipment.order_id);
@@ -4319,8 +4762,8 @@ function openShipmentEditor(shipmentId) {
             <div class="field"><label>Trạng thái</label><select name="status">${optionTags(SHIPMENT_STATUSES, shipment.status)}</select></div>
             <div class="field full"><label>Nhãn trạng thái</label><input name="status_label" value="${esc(shipment.status_label || "")}"></div>
             <div class="field"><label>Dự kiến giao</label><input name="expected_delivery" class="date-text" inputmode="numeric" pattern="\\d{1,2}/\\d{1,2}/\\d{4}" placeholder="dd/mm/yyyy" value="${formatDateInput(shipment.expected_delivery)}"></div>
-            <div class="field"><label>Cước</label><input name="fee" type="number" min="0" step="1000" value="${Number(shipment.fee || 0)}"></div>
-            <div class="field"><label>COD</label><input name="cod_amount" type="number" min="0" step="1000" value="${Number(shipment.cod_amount || 0)}"></div>
+            <div class="field"><label>Cước</label><input name="fee" type="number" step="1000" value="${Number(shipment.fee || 0)}"></div>
+            <div class="field"><label>COD</label><input name="cod_amount" type="number" step="1000" value="${Number(shipment.cod_amount || 0)}"></div>
             <div class="field"><label>Khối lượng gram</label><input name="weight" type="number" min="0" step="1" value="${Number(shipment.weight || 0)}"></div>
             <div class="field"><label>Kích thước</label><input name="dimensions" value="${esc(shipment.dimensions || "")}"></div>
           </form>
@@ -4336,8 +4779,9 @@ function openShipmentEditor(shipmentId) {
 }
 
 async function saveShipmentEditFromForm() {
+  if (!canManageShipments()) return toast("Bạn không có quyền sửa vận đơn.");
   const form = document.querySelector("#shipmentEditForm");
-  if (!form?.reportValidity()) return;
+  if (!form || !formIsValid(form)) return;
   const data = new FormData(form);
   const shipmentId = data.get("id");
   await api(`/api/shipments/${shipmentId}`, {
@@ -4362,6 +4806,7 @@ async function saveShipmentEditFromForm() {
 }
 
 async function deleteShipment(shipmentId) {
+  if (!canManageShipments()) return toast("Bạn không có quyền xóa vận đơn.");
   const shipment = state.data.shipments.find((item) => item.id === shipmentId);
   if (!shipment) return;
   if (!window.confirm(`Xóa vận đơn ${shipment.tracking_code}? Deal liên quan sẽ được gỡ vận đơn.`)) return;
@@ -4374,6 +4819,7 @@ async function deleteShipment(shipmentId) {
 }
 
 async function updateOrderStatus(orderId) {
+  if (!canUpdateOrderStatus()) return toast("Bạn không có quyền cập nhật trạng thái deal.");
   const status = document.querySelector("#detailStatus")?.value;
   if (!status) return;
   const order = state.data.orders.find((item) => item.id === orderId);
@@ -4401,8 +4847,11 @@ async function copyReminder(orderId) {
 async function submitPayment(event) {
   event.preventDefault();
   const form = event.target;
+  if (!canCreatePayments()) return toast("Bạn không có quyền ghi nhận thanh toán.");
   const body = Object.fromEntries(new FormData(form).entries());
   body.amount = readMoneyField(form.elements.amount);
+  form.elements.amount.setCustomValidity(body.amount !== 0 ? "" : "Số tiền phải khác 0.");
+  if (!formIsValid(form)) return;
   await api("/api/payments", { method: "POST", body });
   await loadData();
   toast("Đã ghi nhận thanh toán");
@@ -4411,6 +4860,7 @@ async function submitPayment(event) {
 }
 
 function openPaymentEditor(paymentId) {
+  if (!canManagePayments()) return toast("Bạn không có quyền sửa thanh toán.");
   const payment = state.data.orders.flatMap((order) => order.payments || []).find((item) => item.id === paymentId);
   if (!payment) return;
   const order = state.data.orders.find((item) => item.id === payment.order_id);
@@ -4437,15 +4887,19 @@ function openPaymentEditor(paymentId) {
 }
 
 async function savePaymentEditFromForm() {
+  if (!canManagePayments()) return toast("Bạn không có quyền sửa thanh toán.");
   const form = document.querySelector("#paymentEditForm");
-  if (!form?.reportValidity()) return;
+  if (!form || !formIsValid(form)) return;
   const data = new FormData(form);
+  const amount = readMoneyField(form.elements.amount);
+  form.elements.amount.setCustomValidity(amount !== 0 ? "" : "Số tiền phải khác 0.");
+  if (!formIsValid(form)) return;
   const paymentId = data.get("id");
   const orderId = data.get("order_id");
   await api(`/api/payments/${paymentId}`, {
     method: "PATCH",
     body: {
-      amount: readMoneyField(form.elements.amount),
+      amount,
       type: data.get("type"),
       method: data.get("method"),
       paid_at: businessDateTimeLocalToIso(data.get("paid_at")),
@@ -4458,6 +4912,7 @@ async function savePaymentEditFromForm() {
 }
 
 async function deletePayment(paymentId) {
+  if (!canManagePayments()) return toast("Bạn không có quyền xóa thanh toán.");
   const payment = state.data.orders.flatMap((order) => order.payments || []).find((item) => item.id === paymentId);
   if (!payment || !window.confirm(`Xóa giao dịch ${fmtMoney(payment.amount)}? Công nợ deal sẽ được tính lại.`)) return;
   await api(`/api/payments/${paymentId}`, { method: "DELETE" });
@@ -4470,6 +4925,7 @@ async function deletePayment(paymentId) {
 async function submitExpense(event) {
   event.preventDefault();
   const form = event.target;
+  if (!canManageExpenses() || !formIsValid(form)) return;
   const body = Object.fromEntries(new FormData(form).entries());
   body.amount = Number(body.amount || 0);
   body.date = parseViDate(body.date) || body.date;
@@ -4480,6 +4936,7 @@ async function submitExpense(event) {
 }
 
 function openExpenseEditor(expenseId) {
+  if (!canManageExpenses()) return toast("Bạn không có quyền sửa chi phí.");
   const expense = state.data.expenses.find((item) => item.id === expenseId);
   if (!expense) return;
   const categoryOptions = state.data.meta.expense_categories.map((item) => `<option ${item === expense.category ? "selected" : ""}>${esc(item)}</option>`).join("");
@@ -4496,7 +4953,7 @@ function openExpenseEditor(expenseId) {
             <div class="field"><label>Ngày</label><input name="date" class="date-text" inputmode="numeric" pattern="\\d{1,2}/\\d{1,2}/\\d{4}" placeholder="dd/mm/yyyy" value="${formatDateInput(expense.date)}"></div>
             <div class="field"><label>Nhóm</label><select name="category">${categoryOptions}</select></div>
             <div class="field full"><label>Diễn giải</label><input name="description" value="${esc(expense.description)}"></div>
-            <div class="field"><label>Số tiền</label><input name="amount" type="number" min="0" step="1000" value="${Number(expense.amount || 0)}"></div>
+            <div class="field"><label>Số tiền</label><input name="amount" type="number" step="1000" value="${Number(expense.amount || 0)}" required></div>
           </form>
         </div>
         <div class="modal-footer">
@@ -4510,8 +4967,9 @@ function openExpenseEditor(expenseId) {
 }
 
 async function saveExpenseFromForm() {
+  if (!canManageExpenses()) return toast("Bạn không có quyền sửa chi phí.");
   const form = document.querySelector("#expenseEditForm");
-  if (!form?.reportValidity()) return;
+  if (!form || !formIsValid(form)) return;
   const body = Object.fromEntries(new FormData(form).entries());
   const expenseId = body.id;
   delete body.id;
@@ -4525,6 +4983,7 @@ async function saveExpenseFromForm() {
 }
 
 async function deleteExpense(expenseId) {
+  if (!canManageExpenses()) return toast("Bạn không có quyền xóa chi phí.");
   const expense = state.data.expenses.find((item) => item.id === expenseId);
   if (!expense) return;
   if (!window.confirm(`Xóa chi phí "${expense.description || expense.category}"?`)) return;
@@ -4594,6 +5053,7 @@ function bulkEditFields(entity) {
 }
 
 function openBulkEditor(entity) {
+  if (!canEditEntity(entity)) return toast("Bạn không có quyền sửa dữ liệu này.");
   const ids = selectedIds(entity);
   if (!ids.length) return toast("Chưa chọn dòng nào");
   modalHost.innerHTML = `
@@ -4622,7 +5082,7 @@ function openBulkEditor(entity) {
 
 async function saveBulkEditFromForm() {
   const form = document.querySelector("#bulkEditForm");
-  if (!form?.reportValidity()) return;
+  if (!form || !formIsValid(form)) return;
   const data = new FormData(form);
   const entity = data.get("entity");
   const ids = selectedIds(entity);
@@ -4642,6 +5102,7 @@ async function saveBulkEditFromForm() {
 }
 
 async function bulkDelete(entity) {
+  if (!canDeleteEntity(entity)) return toast("Bạn không có quyền xóa dữ liệu này.");
   const ids = selectedIds(entity);
   if (!ids.length) return toast("Chưa chọn dòng nào");
   const extra = entity === "customers" ? " Khách bị xóa sẽ xóa kèm toàn bộ deal/payment/vận đơn liên quan." : entity === "orders" ? " Deal bị xóa sẽ xóa kèm payment/source line/vận đơn liên quan." : "";
@@ -4655,10 +5116,17 @@ async function bulkDelete(entity) {
   render();
 }
 
+function closeMobileTools() {
+  const topbar = document.querySelector(".topbar");
+  topbar?.classList.remove("is-search-open", "is-filter-open");
+  document.querySelector(".mobile-more-nav")?.removeAttribute("open");
+}
+
 function bindShell() {
   document.querySelectorAll(".nav-item").forEach((button) => {
     button.addEventListener("click", () => {
       state.view = button.dataset.view;
+      closeMobileTools();
       persistUiState();
       render();
     });
@@ -4700,7 +5168,31 @@ function bindShell() {
 
   document.querySelector("#newOrderBtn").addEventListener("click", openOrderForm);
 
-  app.addEventListener("change", (event) => {
+  app.addEventListener("change", async (event) => {
+    if (event.target.matches("[data-mobile-order-status]")) {
+      const select = event.target;
+      const orderId = select.dataset.mobileOrderStatus;
+      const order = state.data.orders.find((item) => item.id === orderId);
+      const previous = select.dataset.previousStatus || order?.status || "";
+      const nextStatus = select.value;
+      if (!order || !nextStatus || nextStatus === previous) return;
+      if (!window.confirm(`Chuyển ${order.order_code} sang "${statusLabel(nextStatus)}"?`)) {
+        select.value = previous;
+        return;
+      }
+      try {
+        select.disabled = true;
+        await api(`/api/orders/${orderId}`, { method: "PATCH", body: { status: nextStatus } });
+        await loadData();
+        toast(`Đã chuyển ${order.order_code} sang ${statusLabel(nextStatus)}`);
+        render();
+      } catch (error) {
+        select.disabled = false;
+        select.value = previous;
+        toast(error.message, "error");
+      }
+      return;
+    }
     if (event.target.id === "statusFilter") {
       state.statusFilter = event.target.value;
       render();
@@ -4711,11 +5203,11 @@ function bindShell() {
     }
     if (event.target.id === "adminUserRoleFilter") {
       state.accountFilters.role = event.target.value;
-      loadAdminUsers({ page: 1 }).catch((error) => toast(error.message));
+      loadAdminUsers({ page: 1 }).catch((error) => toast(error.message, "error"));
     }
     if (event.target.id === "adminUserStatusFilter") {
       state.accountFilters.status = event.target.value;
-      loadAdminUsers({ page: 1 }).catch((error) => toast(error.message));
+      loadAdminUsers({ page: 1 }).catch((error) => toast(error.message, "error"));
     }
   });
 
@@ -4761,7 +5253,7 @@ function bindShell() {
       try {
         await loadAdminUsers({ page: 1 });
       } catch (error) {
-        toast(error.message);
+        toast(error.message, "error");
       }
       return;
     }
@@ -4769,14 +5261,14 @@ function bindShell() {
       try {
         await submitExpense(event);
       } catch (error) {
-        toast(error.message);
+        toast(error.message, "error");
       }
     }
   });
 
   app.addEventListener("dragstart", (event) => {
     const card = event.target.closest(".deal-card");
-    if (!card) return;
+    if (!card || !canUpdateOrderStatus()) return;
     state.dragOrderId = card.dataset.orderId;
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", state.dragOrderId);
@@ -4801,7 +5293,7 @@ function bindShell() {
 
   app.addEventListener("drop", async (event) => {
     const column = event.target.closest(".kanban-column");
-    if (!column || !state.dragOrderId) return;
+    if (!column || !state.dragOrderId || !canUpdateOrderStatus()) return;
     event.preventDefault();
     column.classList.remove("is-drop-target");
     const orderId = state.dragOrderId;
@@ -4816,7 +5308,7 @@ function bindShell() {
       toast(`Đã chuyển ${order.order_code} sang ${statusLabel(nextStatus)}`);
       render();
     } catch (error) {
-      toast(error.message);
+      toast(error.message, "error");
     }
   });
 
@@ -4834,7 +5326,7 @@ function bindShell() {
           selectOrderItemImage(event.target);
         } catch (error) {
           event.target.value = "";
-          toast(error.message);
+          toast(error.message, "error");
         }
       }
       if (event.target.matches('[data-field="product_id"]')) syncProductRowFromCatalog(event.target.closest(".product-item-row"));
@@ -4845,7 +5337,7 @@ function bindShell() {
         selectCatalogProductImage(event.target);
       } catch (error) {
         event.target.value = "";
-        toast(error.message);
+        toast(error.message, "error");
       }
     }
     if (event.target.closest(".metal-rule-row")) syncMetalRuleRow(event.target.closest(".metal-rule-row"));
@@ -4924,7 +5416,7 @@ function bindShell() {
       try {
         await saveAdminUserForm(event.target);
       } catch (error) {
-        toast(error.message);
+        toast(error.message, "error");
       }
       return;
     }
@@ -4932,7 +5424,7 @@ function bindShell() {
       try {
         await submitPayment(event);
       } catch (error) {
-        toast(error.message);
+        toast(error.message, "error");
       }
     }
   });
@@ -4942,15 +5434,32 @@ function bindShell() {
     if (!actionTarget) return;
     const action = actionTarget.dataset.action;
     try {
+      if (action === "toggle-mobile-search") {
+        const topbar = document.querySelector(".topbar");
+        const willOpen = !topbar?.classList.contains("is-search-open");
+        topbar?.classList.toggle("is-search-open", willOpen);
+        topbar?.classList.remove("is-filter-open");
+        document.querySelector(".mobile-more-nav")?.removeAttribute("open");
+        if (willOpen) requestAnimationFrame(() => document.querySelector("#globalSearch")?.focus());
+      }
+      if (action === "toggle-mobile-filters") {
+        const topbar = document.querySelector(".topbar");
+        const willOpen = !topbar?.classList.contains("is-filter-open");
+        topbar?.classList.toggle("is-filter-open", willOpen);
+        topbar?.classList.remove("is-search-open");
+        document.querySelector(".mobile-more-nav")?.removeAttribute("open");
+      }
+      if (action === "close-mobile-tools") closeMobileTools();
       if (action === "close-modal") {
-        if (actionTarget.classList.contains("modal-backdrop") && event.target !== actionTarget) return;
+        if (actionTarget.classList.contains("modal-backdrop")) return;
         closeModal();
       }
       if (action === "logout") {
         await window.TrinketFirebase.signOut();
         state.data = null;
         state.session = null;
-        document.querySelector("#logoutBtn")?.remove();
+        const logoutButton = document.querySelector("#logoutBtn");
+        if (logoutButton) logoutButton.hidden = true;
         showLogin("Bạn đã đăng xuất.");
       }
       if (action === "open-login-password-change") showLoginPasswordChange();
@@ -5005,6 +5514,11 @@ function bindShell() {
       }
       if (action === "add-source-line") addSourceLineRow();
       if (action === "remove-source-line") removeSourceLineRow(actionTarget);
+      if (action === "set-tax-rate") {
+        const form = actionTarget.closest(".order-editor-form");
+        if (form?.elements.tax_rate) form.elements.tax_rate.value = actionTarget.dataset.rate || "0";
+        refreshOrderPricing(form);
+      }
       if (action === "apply-suggested-price") applySuggestedPrice();
       if (action === "save-order") await saveOrderFromForm();
       if (action === "edit-orders") openOrderEditor(actionTarget.dataset.id);
@@ -5018,6 +5532,7 @@ function bindShell() {
       if (action === "switch-view") {
         state.view = actionTarget.dataset.view || "dashboard";
         if (actionTarget.dataset.filter === "receivable") state.quickFilter = "receivable";
+        closeMobileTools();
         persistUiState();
         render();
       }
@@ -5041,6 +5556,10 @@ function bindShell() {
         state.orderView = actionTarget.dataset.mode;
         persistUiState();
         render();
+      }
+      if (action === "scroll-kanban-column") {
+        const column = [...document.querySelectorAll(".kanban-column")].find((item) => item.dataset.statusId === actionTarget.dataset.statusId);
+        column?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
       }
       if (action === "create-shipment") await createShipment(actionTarget.dataset.orderId);
       if (action === "sync-shipment") await syncShipment(actionTarget.dataset.shipmentId);
@@ -5115,7 +5634,7 @@ function bindShell() {
       if (action === "save-revenue-targets") await saveRevenueTargetsFromForm();
       if (action === "refresh-market-prices") await refreshMarketPrices();
     } catch (error) {
-      toast(error.message);
+      toast(error.message, "error");
     }
   });
 }

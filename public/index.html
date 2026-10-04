@@ -17,17 +17,17 @@
       document.documentElement.dataset.initialView = "dashboard";
     }
   </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body class="modal-open">
   <div class="shell" id="appShell" aria-hidden="true">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-mark">T</div>
-        <div>
-          <strong>Trinket</strong>
-          <span>Business Manager</span>
-        </div>
+        <img class="brand-logo" src="/trinket-logo.png" alt="Trinket">
+        <span class="brand-caption">Business Manager</span>
       </div>
       <nav class="nav" aria-label="Điều hướng chính">
         <button class="nav-item is-active" data-view="dashboard"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></button>
@@ -38,16 +38,36 @@
         <button class="nav-item" data-view="finance"><i data-lucide="banknote"></i><span>Tài chính</span></button>
         <button class="nav-item" data-view="shipping"><i data-lucide="truck"></i><span>Vận chuyển</span></button>
         <button class="nav-item" data-view="settings"><i data-lucide="settings"></i><span>Cấu hình</span></button>
+        <details class="mobile-more-nav">
+          <summary aria-label="Mở thêm chức năng"><i data-lucide="menu"></i><span>Thêm</span></summary>
+          <div class="mobile-more-menu">
+            <button data-action="switch-view" data-view="finance"><i data-lucide="banknote"></i><span>Tài chính</span></button>
+            <button data-action="switch-view" data-view="vendors"><i data-lucide="gem"></i><span>Nguồn hàng</span></button>
+            <button data-action="switch-view" data-view="shipping"><i data-lucide="truck"></i><span>Vận chuyển</span></button>
+            <button data-action="switch-view" data-view="settings"><i data-lucide="settings"></i><span>Cấu hình</span></button>
+          </div>
+        </details>
       </nav>
+      <div class="sidebar-account" id="sidebarAccount">
+        <span class="sidebar-avatar" id="sidebarAvatar">TR</span>
+        <span class="sidebar-account-copy"><strong id="sidebarAccountName">Trinket</strong><small id="sidebarAccountRole">Business Manager</small></span>
+      </div>
     </aside>
 
     <section class="workspace">
       <header class="topbar">
-        <div>
-          <p class="eyebrow">Nội bộ Trinket</p>
-          <h1 id="viewTitle">Dashboard</h1>
+        <div class="topbar-heading">
+          <div>
+            <p class="eyebrow">Nội bộ Trinket</p>
+            <h1 id="viewTitle">Dashboard</h1>
+          </div>
+          <div class="mobile-topbar-actions">
+            <button class="ghost mobile-search-toggle" type="button" data-action="toggle-mobile-search" title="Tìm kiếm" aria-label="Mở tìm kiếm"><i data-lucide="search"></i></button>
+            <button class="ghost mobile-filter-toggle" type="button" data-action="toggle-mobile-filters" title="Bộ lọc" aria-label="Mở bộ lọc"><i data-lucide="sliders-horizontal"></i></button>
+          </div>
         </div>
         <div class="top-actions">
+          <div class="mobile-filter-heading"><strong>Bộ lọc hiển thị</strong><button class="ghost" type="button" data-action="close-mobile-tools" aria-label="Đóng bộ lọc"><i data-lucide="x"></i></button></div>
           <label class="search">
             <i data-lucide="search"></i>
             <input id="globalSearch" type="search" placeholder="Tìm đơn, khách, SĐT...">
@@ -89,6 +109,7 @@
             <option value="accounting">Kế toán</option>
           </select>
           <button class="primary" id="newOrderBtn"><i data-lucide="plus"></i><span>Tạo deal</span></button>
+          <button class="ghost" id="logoutBtn" data-action="logout" title="Đăng xuất" aria-label="Đăng xuất" hidden><i data-lucide="log-out"></i></button>
         </div>
       </header>
 
@@ -132,8 +153,7 @@
       <section id="authBootScreen" class="modal auth-screen" role="dialog" aria-modal="true" aria-label="Đăng nhập Trinket" data-auth-lock="true">
         <div class="auth-brand-panel">
           <div class="auth-brand-lockup">
-            <span class="auth-brand-mark" aria-hidden="true">T</span>
-            <span><strong>Trinket</strong><small>Business Manager</small></span>
+            <span class="auth-brand-logo"><img src="/trinket-logo.png" alt="Trinket"><small>Business Manager</small></span>
           </div>
           <div class="auth-brand-copy">
             <p class="eyebrow">Không gian làm việc nội bộ</p>

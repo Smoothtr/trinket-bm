@@ -24,8 +24,10 @@ test("round 2 desktop layouts", async ({ page }) => {
   await expect(page.locator("#orderForm")).toBeVisible();
   await expectNoPageOverflow(page);
   await page.screenshot({ path: "test-results/round2-deal-desktop.png" });
-  await page.locator(".product-mode-switch").scrollIntoViewIfNeeded();
+  await page.locator(".pricing-engine").scrollIntoViewIfNeeded();
   await page.screenshot({ path: "test-results/round2-deal-engine-desktop.png" });
+  await page.locator(".customer-quote-section").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: "test-results/round2-deal-quote-desktop.png" });
   await page.locator('.product-item-row [data-action="set-product-mode"][data-mode="custom"]').first().click();
   await page.screenshot({ path: "test-results/round2-deal-custom-desktop.png" });
   await page.locator("[aria-label='Đóng']").click();
@@ -57,8 +59,13 @@ test("round 2 mobile layouts", async ({ page }) => {
   await expect(page.locator("#orderForm")).toBeVisible();
   await expectNoPageOverflow(page);
   await page.screenshot({ path: "test-results/round2-deal-mobile.png" });
-  await page.locator(".product-mode-switch").scrollIntoViewIfNeeded();
+  await page.locator(".mobile-section-jump").nth(5).click();
+  await page.locator(".pricing-engine").scrollIntoViewIfNeeded();
   await page.screenshot({ path: "test-results/round2-deal-engine-mobile.png" });
+  await page.locator(".mobile-section-jump").nth(3).click();
+  await page.locator(".customer-quote-section").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: "test-results/round2-deal-quote-mobile.png" });
+  await page.locator(".mobile-section-jump").nth(2).click();
   await page.locator('.product-item-row [data-action="set-product-mode"][data-mode="custom"]').first().click();
   await page.screenshot({ path: "test-results/round2-deal-custom-mobile.png" });
   await page.locator("[aria-label='Đóng']").click();

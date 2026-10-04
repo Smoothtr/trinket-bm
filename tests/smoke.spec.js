@@ -66,6 +66,9 @@ test("core screens, recommendation fixes, and modals render without client error
   await expect(page.locator('.product-item-row [data-action="set-product-mode"]')).toHaveCount(2);
   await expect(page.getByText("Tính giá kim loại")).toHaveCount(0);
   await expect(page.locator('[data-pricing-output="item_cost"]')).toBeVisible();
+  await expect(page.getByText("Báo giá khách", { exact: true })).toBeVisible();
+  await expect(page.locator('select[name="tax_inclusion"]')).toHaveValue("exclusive");
+  await expect(page.locator('select[name="tax_base"]')).toHaveValue("products");
   await page.locator('.product-item-row [data-action="set-product-mode"][data-mode="custom"]').click();
   await expect(page.locator('.product-item-row .custom-only').first()).toBeVisible();
   await expect(page.locator('.product-item-row .catalog-only')).toBeHidden();
@@ -92,12 +95,17 @@ test("core screens, recommendation fixes, and modals render without client error
   await page.locator(".source-line-row [data-field='cost']").first().fill("500000");
   await expect(page.locator(".source-line-row [data-field='cost']").first()).toHaveValue("500.000");
   await page.locator("input[name='shipping_cost']").fill("100000");
+  await page.locator("input[name='shipping_fee']").fill("30000");
   await page.locator("input[name='profit_rate']").fill("30");
+  await page.locator("input[name='pricing_tax_rate']").fill("10");
   await page.locator("input[name='tax_rate']").fill("10");
   await expect(page.locator("[data-pricing-output='item_cost']")).toContainText("2.000.000");
+  await expect(page.locator("[data-pricing-output='pricing_tax_amount']")).toContainText("338.000");
   await expect(page.locator("[data-pricing-output='suggested_price']")).toContainText("3.718.000");
   await page.locator("[data-action='apply-suggested-price']").click();
-  await expect(page.locator("input[name='price']")).toHaveValue("3.718.000");
+  await expect(page.locator("[data-pricing-output='quote_price']")).toContainText("3.718.000");
+  await expect(page.locator("[data-pricing-output='tax_amount']")).toContainText("371.800");
+  await expect(page.locator("[data-pricing-output='invoice_total']")).toContainText("4.119.800");
   await page.locator("[aria-label='Đóng']").click();
 
   await page.locator(".nav-item[data-view='products']").click();
@@ -144,7 +152,7 @@ test("core screens, recommendation fixes, and modals render without client error
 
   await page.locator(".nav-item[data-view='vendors']").click();
   await expect(page.getByText("Cập nhật thủ công", { exact: true })).toBeVisible();
-  await expect(page.locator(".market-price-card")).toContainText("chưa cập nhật thị trường");
+  await expect(page.locator(".market-price-card")).toBeVisible();
   await expect(page.locator("[data-action='edit-vendors']").first()).toBeVisible();
   await expect(page.locator("[data-action='delete-vendors']").first()).toBeVisible();
   await page.locator("[data-action='toggle-select'][data-entity='vendors']").first().check();
@@ -223,7 +231,9 @@ test("bộ lọc thời gian mặc định toàn thời gian và hỗ trợ kho�
 test("custom product editor remains usable on mobile", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(process.env.BASE_URL || "http://localhost:4173", { waitUntil: "networkidle" });
-  await page.locator("#newOrderBtn").click();
+  await page.locator(".nav-item[data-view='orders']").click();
+  await page.locator("[data-action='new-order']").first().click();
+  await page.locator(".mobile-section-jump").nth(2).click();
   await page.locator('[data-action="set-product-mode"][data-mode="custom"]').click();
   await expect(page.locator('[data-field="unit_cost"]')).toBeVisible();
   await expect(page.locator('[data-item-cost-output]')).toHaveCount(0);
@@ -345,7 +355,8 @@ test("màn hình bắt buộc đổi mật khẩu che toàn bộ ứng dụng", 
 test("quản lý tài khoản responsive và không tràn ngang trên mobile", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(process.env.BASE_URL || "http://localhost:4173", { waitUntil: "networkidle" });
-  await page.locator(".nav-item[data-view='settings']").click();
+  await page.locator(".mobile-more-nav > summary").click();
+  await page.locator(".mobile-more-nav [data-view='settings']").click();
   await page.locator("[data-action='set-settings-tab'][data-tab='accounts']").click();
   await expect(page.locator(".accounts-table tbody tr").first()).toBeVisible();
   await expect(page.locator("[data-action='delete-admin-user']").first()).toBeVisible();
@@ -362,4 +373,170 @@ test("vai trò không phải Admin không nhìn thấy Quản lý tài khoản",
   await page.locator("#roleFilter").selectOption("sale");
   await page.locator(".nav-item[data-view='settings']").click();
   await expect(page.locator("[data-action='set-settings-tab'][data-tab='accounts']")).toHaveCount(0);
+});
+
+test("giao diện chỉ hiển thị thao tác đúng quyền", async ({ page }) => {
+  await page.goto(process.env.BASE_URL || "http://localhost:4173", { waitUntil: "networkidle" });
+
+  await page.locator("#roleFilter").selectOption("sale");
+  await page.locator(".nav-item[data-view='orders']").click();
+  await expect(page.locator("[data-action='new-order']")).toBeVisible();
+  await expect(page.locator("[data-action='edit-orders']").first()).toBeVisible();
+  await expect(page.locator("[data-action='delete-orders']")).toHaveCount(0);
+  await page.locator("[data-action='edit-orders']").first().click();
+  await expect(page.locator("#orderEditForm input[name='price_adjustment']")).toBeVisible();
+  await expect(page.locator("#orderEditForm [data-pricing-output='invoice_total']")).toBeVisible();
+  const saleCustomCost = page.locator("#orderEditForm [data-field='unit_cost']").first();
+  await page.locator("#orderEditForm [data-action='set-product-mode'][data-mode='catalog']").first().click();
+  await expect(saleCustomCost).toBeHidden();
+  await page.locator("#orderEditForm [data-action='set-product-mode'][data-mode='custom']").first().click();
+  await expect(saleCustomCost).toBeVisible();
+  await saleCustomCost.fill("-250000");
+  await expect(saleCustomCost).toHaveValue("−250.000");
+  await expect(page.locator("#orderEditForm .source-line-row")).toHaveCount(0);
+  await expect(page.locator("#orderEditForm [data-pricing-output='item_cost']")).toHaveCount(0);
+  await page.locator("[aria-label='Đóng']").click();
+  await page.locator(".nav-item[data-view='customers']").click();
+  await expect(page.locator("[data-action='edit-customers']").first()).toBeVisible();
+  await expect(page.locator("[data-action='delete-customers']")).toHaveCount(0);
+  await page.locator(".nav-item[data-view='finance']").click();
+  await expect(page.locator("#expenseForm")).toHaveCount(0);
+  await expect(page.locator("[data-action='edit-expense']")).toHaveCount(0);
+  await page.locator(".nav-item[data-view='products']").click();
+  await expect(page.locator("[data-action='new-product']")).toHaveCount(0);
+
+  await page.locator("#roleFilter").selectOption("ops");
+  await page.locator(".nav-item[data-view='orders']").click();
+  await expect(page.locator("[data-action='edit-orders']")).toHaveCount(0);
+  await expect(page.locator("[data-action='delete-orders']")).toHaveCount(0);
+  await page.locator(".nav-item[data-view='products']").click();
+  await expect(page.locator("[data-action='new-product']")).toBeVisible();
+  await page.locator(".nav-item[data-view='customers']").click();
+  await expect(page.locator("[data-action='edit-customers']")).toHaveCount(0);
+
+  await page.locator("#roleFilter").selectOption("accounting");
+  await page.locator(".nav-item[data-view='orders']").click();
+  await expect(page.locator("[data-action='edit-orders']")).toHaveCount(0);
+  await page.locator(".nav-item[data-view='finance']").click();
+  await expect(page.locator("#expenseForm")).toBeVisible();
+  await expect(page.locator("[data-action='edit-expense']").first()).toBeVisible();
+});
+
+test("form deal chặn ngày không tồn tại trước khi gọi API", async ({ page }) => {
+  await page.goto(process.env.BASE_URL || "http://localhost:4173", { waitUntil: "networkidle" });
+  await page.locator(".nav-item[data-view='orders']").click();
+  await page.locator("[data-action='edit-orders']").first().click();
+  const dueDate = page.locator("#orderEditForm input[name='due_date']");
+  await dueDate.fill("31/02/2026");
+  await page.locator("[data-action='save-order-edit']").click();
+  await expect(page.locator("#orderEditForm")).toBeVisible();
+  await expect(dueDate).toHaveJSProperty("validity.valid", false);
+});
+
+test("sửa giá và Lưu deal chỉ đóng popup sau khi API lưu thành công", async ({ page }) => {
+  const baseUrl = process.env.BASE_URL || "http://localhost:4173";
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.locator(".nav-item[data-view='orders']").click();
+  const orderId = await page.locator("[data-action='open-order']").first().getAttribute("data-order-id");
+  await page.locator("[data-action='edit-orders']").first().click();
+  const itemSubtotal = Number(await page.locator("#orderEditForm [data-pricing-output='item_subtotal']").getAttribute("data-value"));
+  const adjustment = page.locator("#orderEditForm input[name='price_adjustment']");
+  await adjustment.fill(String(3_850_000 - itemSubtotal));
+  await expect(page.locator("#orderEditForm")).toBeVisible();
+  await page.locator("[data-action='save-order-edit']").click();
+
+  await expect(page.locator("#orderEditForm")).toHaveCount(0);
+  await expect(page.locator(".orders-table-scroll")).toBeVisible();
+  const saved = await (await page.request.get(`${baseUrl}/api/bootstrap`)).json();
+  expect(saved.orders.find((order) => order.id === orderId).price).toBe(3_850_000);
+});
+
+test("sửa deal cho phép sửa và lưu thông tin khách hàng", async ({ page }) => {
+  const baseUrl = process.env.BASE_URL || "http://localhost:4173";
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.locator(".nav-item[data-view='orders']").click();
+  await page.locator("[data-action='edit-orders']").first().click();
+
+  const form = page.locator("#orderEditForm");
+  const customerSelect = form.locator("select[name='customer_id']");
+  const originalCustomerId = await customerSelect.inputValue();
+  const bootstrap = await (await page.request.get(`${baseUrl}/api/bootstrap`)).json();
+  const originalCustomer = bootstrap.customers.find((customer) => customer.id === originalCustomerId);
+  expect(originalCustomer).toBeTruthy();
+
+  await expect(form.locator("input[name='customer_full_name']")).toHaveValue(originalCustomer.full_name);
+  await expect(form.locator("input[name='customer_phone']")).toHaveValue(originalCustomer.phone);
+  await expect(form.locator("input[name='customer_address']")).toHaveValue(originalCustomer.address);
+  await expect(form.locator("select[name='customer_channel']")).toBeVisible();
+  await expect(form.locator("[data-address-picker]")).toBeVisible();
+
+  const anotherCustomer = bootstrap.customers.find((customer) => customer.id !== originalCustomerId);
+  if (anotherCustomer) {
+    await customerSelect.selectOption(anotherCustomer.id);
+    await expect(form.locator("input[name='customer_full_name']")).toHaveValue(anotherCustomer.full_name);
+    await customerSelect.selectOption(originalCustomerId);
+    await expect(form.locator("input[name='customer_full_name']")).toHaveValue(originalCustomer.full_name);
+  }
+
+  const updatedName = `${originalCustomer.full_name} QA`;
+  const updatedPhone = `${originalCustomer.phone}0`;
+  const updatedAddress = `${originalCustomer.address} QA`;
+  try {
+    await form.locator("input[name='customer_full_name']").fill(updatedName);
+    await form.locator("input[name='customer_phone']").fill(updatedPhone);
+    await form.locator("input[name='customer_address']").fill(updatedAddress);
+    await page.locator("[data-action='save-order-edit']").click();
+
+    await expect(form).toHaveCount(0);
+    const saved = await (await page.request.get(`${baseUrl}/api/bootstrap`)).json();
+    const savedCustomer = saved.customers.find((customer) => customer.id === originalCustomerId);
+    expect(savedCustomer.full_name).toBe(updatedName);
+    expect(savedCustomer.phone).toBe(updatedPhone);
+    expect(savedCustomer.address).toBe(updatedAddress);
+  } finally {
+    await page.request.patch(`${baseUrl}/api/customers/${originalCustomerId}`, {
+      data: {
+        full_name: originalCustomer.full_name,
+        phone: originalCustomer.phone,
+        address: originalCustomer.address,
+        channel: originalCustomer.channel,
+        account: originalCustomer.account,
+        province: originalCustomer.province,
+        district: originalCustomer.district,
+        ward: originalCustomer.ward,
+        note: originalCustomer.note,
+      },
+    });
+  }
+});
+
+test("modal sửa nhà cung cấp chỉ đóng bằng X, Hủy hoặc sau khi lưu", async ({ page }) => {
+  await page.goto(process.env.BASE_URL || "http://localhost:4173", { waitUntil: "networkidle" });
+  await page.locator(".nav-item[data-view='vendors']").click();
+
+  const editButtons = page.locator("[data-action='edit-vendors']");
+  const editButtonCount = await editButtons.count();
+  expect(editButtonCount).toBeGreaterThan(0);
+  const editButton = editButtons.nth(editButtonCount - 1);
+
+  await editButton.click();
+  await expect(page.locator("#vendorEditForm")).toBeVisible();
+  await page.locator(".modal-backdrop").click({ position: { x: 5, y: 5 } });
+  await expect(page.locator("#vendorEditForm")).toBeVisible();
+  await page.locator(".modal-footer [data-action='close-modal']").click();
+  await expect(page.locator("#vendorEditForm")).toHaveCount(0);
+
+  await editButton.dblclick();
+  await expect(page.locator("#vendorEditForm")).toBeVisible();
+  await page.locator(".modal-header [data-action='close-modal']").click();
+  await expect(page.locator("#vendorEditForm")).toHaveCount(0);
+
+  await editButton.click();
+  await expect(page.locator("#vendorEditForm")).toBeVisible();
+  const saveResponse = page.waitForResponse(
+    (response) => response.url().includes("/api/vendors/") && response.request().method() === "PATCH",
+  );
+  await page.locator("[data-action='save-vendor-edit']").click();
+  expect((await saveResponse).status()).toBe(200);
+  await expect(page.locator("#vendorEditForm")).toHaveCount(0);
 });

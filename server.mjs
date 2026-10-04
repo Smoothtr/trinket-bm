@@ -21,6 +21,7 @@ const SERVER_PATH = fileURLToPath(import.meta.url);
 const ROOT = path.dirname(SERVER_PATH);
 const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_DIR = path.join(ROOT, "data");
+const RECEIPT_LOGO_PATH = path.join(PUBLIC_DIR, "trinket-logo.png");
 const IS_VERCEL = process.env.VERCEL === "1";
 const STORE_PATH = process.env.TRINKET_STORE_PATH || (IS_VERCEL ? path.join(os.tmpdir(), "trinket-store.json") : path.join(DATA_DIR, "store.json"));
 const SEED_PATH = path.join(DATA_DIR, "seed.json");
@@ -180,6 +181,94 @@ function money(value) {
   return Number(value || 0);
 }
 
+function requestError(message) {
+  const error = new Error(message);
+  error.statusCode = 400;
+  return error;
+}
+
+function parseRequestMoney(value, label = "Số tiền", { positive = false, nonZero = false } = {}) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) throw requestError(`${label} không hợp lệ.`);
+  if (positive && amount <= 0) throw requestError(`${label} phải lớn hơn 0.`);
+  if (nonZero && amount === 0) throw requestError(`${label} phải khác 0.`);
+  return amount;
+}
+
+function parseRequestNonNegativeNumber(value, label) {
+  const amount = parseRequestMoney(value, label);
+  if (amount < 0) throw requestError(`${label} không được âm.`);
+  return amount;
+}
+
+function isValidIsoDate(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year
+    && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day;
+}
+
+function validateOptionalDate(value, label) {
+  if (value === undefined || value === null || value === "") return;
+  if (!isValidIsoDate(value)) throw requestError(`${label} không hợp lệ.`);
+}
+
+function validateOrderRequest(body) {
+  validateOptionalDate(body.date_order, "Ngày đặt");
+  validateOptionalDate(body.due_date, "Due date");
+  validateOptionalDate(body.payment_date, "Ngày thanh toán");
+  if (Object.prototype.hasOwnProperty.call(body, "price")) {
+    parseRequestMoney(body.price, "Giá deal");
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "shipping_cost")) {
+    parseRequestMoney(body.shipping_cost, "Phí giao");
+  }
+  if (body.quote && typeof body.quote === "object") {
+    if (Object.prototype.hasOwnProperty.call(body.quote, "adjustment")) {
+      parseRequestMoney(body.quote.adjustment, "Điều chỉnh giá");
+    }
+    if (Object.prototype.hasOwnProperty.call(body.quote, "shipping_fee")) {
+      parseRequestMoney(body.quote.shipping_fee, "Phí ship thu khách");
+    }
+    const taxRate = Number(body.quote.tax_rate || 0);
+    if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) {
+      throw requestError("Thuế phải từ 0% đến 100%.");
+    }
+    if (body.quote.tax_inclusion && !["exclusive", "inclusive"].includes(body.quote.tax_inclusion)) {
+      throw requestError("Cách hiển thị thuế không hợp lệ.");
+    }
+    if (body.quote.tax_base && !["products", "products_shipping"].includes(body.quote.tax_base)) {
+      throw requestError("Cơ sở tính thuế không hợp lệ.");
+    }
+    if (body.quote.shipping_payer && !["customer", "shop"].includes(body.quote.shipping_payer)) {
+      throw requestError("Người chịu phí ship không hợp lệ.");
+    }
+  }
+  if (body.pricing && typeof body.pricing === "object") {
+    if (Object.prototype.hasOwnProperty.call(body.pricing, "profit_rate")) {
+      parseRequestMoney(body.pricing.profit_rate, "Lãi trên giá vốn");
+    }
+    if (Object.prototype.hasOwnProperty.call(body.pricing, "tax_rate")) {
+      parseRequestMoney(body.pricing.tax_rate, "Thuế");
+    }
+  }
+  if (Array.isArray(body.sourcing_lines)) {
+    body.sourcing_lines.forEach((line) => {
+      if (Object.prototype.hasOwnProperty.call(line, "cost")) {
+        parseRequestMoney(line.cost, "Chi phí nguồn hàng");
+      }
+      if (Object.prototype.hasOwnProperty.call(line, "weight")) {
+        parseRequestMoney(line.weight, "Khối lượng nguồn hàng");
+      }
+    });
+  }
+}
+
 const ORDER_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_ORDER_IMAGE_SIZE = 5 * 1024 * 1024;
 
@@ -232,7 +321,48 @@ function prepareIncomingOrderItems(items, orderId) {
     if (item.image && !normalizeOrderItemImage(item.image, orderId, itemId)) {
       throw new Error("Invalid product image metadata");
     }
-    return { ...item, id: itemId };
+    const quantity = Number(item.quantity ?? 1);
+    if (!Number.isInteger(quantity) || quantity <= 0) throw new Error("Số lượng sản phẩm phải là số nguyên lớn hơn 0");
+    const prepared = { ...item, id: itemId, quantity };
+    if (Object.prototype.hasOwnProperty.call(item, "unit_price")) {
+      prepared.unit_price = parseRequestMoney(item.unit_price, "Đơn giá sản phẩm");
+    }
+    if (Object.prototype.hasOwnProperty.call(item, "unit_cost")) {
+      prepared.unit_cost = parseRequestMoney(item.unit_cost, "Giá vốn sản phẩm");
+    }
+    if (item.metal_pricing && typeof item.metal_pricing === "object") {
+      prepared.metal_pricing = { ...item.metal_pricing };
+      if (Object.prototype.hasOwnProperty.call(item.metal_pricing, "unit_price")) {
+        prepared.metal_pricing.unit_price = parseRequestMoney(item.metal_pricing.unit_price, "Đơn giá kim loại");
+      }
+      if (Object.prototype.hasOwnProperty.call(item.metal_pricing, "material_cost")) {
+        prepared.metal_pricing.material_cost = parseRequestMoney(item.metal_pricing.material_cost, "Chi phí kim loại");
+      }
+    }
+    return prepared;
+  });
+}
+
+function protectOrderItemCosts(items, existingOrder, data, role) {
+  if (role !== "sale") return items;
+  const existingItems = existingOrder ? normalizeOrderItems(existingOrder, data) : [];
+  return items.map((item) => {
+    const previous = existingItems.find((entry) => entry.id === item.id);
+    const product = (data.products || []).find((entry) => entry.id === item.product_id);
+    const isCustom = item.product_mode === "custom" || !item.product_id;
+    return {
+      ...item,
+      unit_cost: isCustom
+        ? (Object.prototype.hasOwnProperty.call(item, "unit_cost") ? money(item.unit_cost) : previous?.unit_cost ?? 0)
+        : previous?.unit_cost ?? product?.default_cost ?? 0,
+      metal_pricing: previous?.metal_pricing || {
+        mode: "none",
+        unit: "g",
+        weight: 0,
+        unit_price: 0,
+        material_cost: 0,
+      },
+    };
   });
 }
 
@@ -266,7 +396,7 @@ function normalizeMaterial(material, index = 0) {
     group: String(material?.group || "Khác").trim(),
     market_key: String(material?.market_key || "").trim(),
     default_unit: unit,
-    default_price: Math.max(0, money(material?.default_price)),
+    default_price: money(material?.default_price),
     note: String(material?.note || "").trim(),
   };
 }
@@ -336,7 +466,7 @@ function normalizeOrderItems(order, data) {
     const metalUnit = ["g", "chi"].includes(rawMetalPricing.unit) ? rawMetalPricing.unit : material?.default_unit || "g";
     const quantity = Math.max(1, Number(item.quantity || 1));
     const metalWeight = numericWeight(rawMetalPricing.weight);
-    const metalUnitPrice = Math.max(0, money(rawMetalPricing.unit_price));
+    const metalUnitPrice = money(rawMetalPricing.unit_price);
     const materialCost = metalMode === "none" ? 0 : Math.round(metalUnitPrice * metalWeight * quantity);
     const productMode = item.product_mode === "custom" || (!item.product_id && item.product_mode !== "catalog") ? "custom" : "catalog";
     return {
@@ -349,7 +479,7 @@ function normalizeOrderItems(order, data) {
       note: item.note || "",
       quantity,
       unit_price: money(item.unit_price),
-      unit_cost: Math.max(0, money(item.unit_cost)),
+      unit_cost: money(item.unit_cost),
       size: item.size || "",
       material_id: material?.id || item.material_id || "",
       metal_pricing: {
@@ -367,6 +497,19 @@ function normalizeOrderItems(order, data) {
       },
     };
   });
+}
+
+function normalizeOrderQuote(quote) {
+  if (!quote || Number(quote.version) < 2) return null;
+  return {
+    version: 2,
+    adjustment: money(quote.adjustment),
+    shipping_fee: money(quote.shipping_fee),
+    shipping_payer: quote.shipping_payer === "shop" ? "shop" : "customer",
+    tax_rate: Math.min(100, Math.max(0, Number(quote.tax_rate || 0))),
+    tax_inclusion: quote.tax_inclusion === "inclusive" ? "inclusive" : "exclusive",
+    tax_base: quote.tax_base === "products_shipping" ? "products_shipping" : "products",
+  };
 }
 
 function normalizeData(data) {
@@ -424,6 +567,9 @@ function normalizeData(data) {
     : DEFAULT_MATERIAL_CATALOG).map(normalizeMaterial);
   data.orders.forEach((order) => {
     order.items = normalizeOrderItems(order, data);
+    const normalizedQuote = normalizeOrderQuote(order.quote);
+    if (normalizedQuote) order.quote = normalizedQuote;
+    else delete order.quote;
     order.pricing = {
       ...(order.pricing || {}),
       profit_rate: Number(order.pricing?.profit_rate || 0),
@@ -522,6 +668,41 @@ function syncOrderPaymentStatus(order, data) {
 
 function roundTo(value, step = 1000) {
   return Math.round(Number(value || 0) / step) * step;
+}
+
+function calculateOrderQuote(order, itemSubtotal, shippingCost) {
+  const quote = normalizeOrderQuote(order.quote);
+  const isQuoteV2 = Boolean(quote);
+  const productPrice = isQuoteV2
+    ? money(itemSubtotal) + money(quote.adjustment)
+    : money(order.price);
+  const configuredShippingFee = isQuoteV2 ? money(quote.shipping_fee) : money(shippingCost);
+  const shippingFee = isQuoteV2 && quote.shipping_payer === "shop" ? 0 : configuredShippingFee;
+  const taxRate = isQuoteV2 ? quote.tax_rate : 0;
+  const taxableAmount = productPrice + (isQuoteV2 && quote.tax_base === "products_shipping" ? shippingFee : 0);
+  const taxAmount = !taxRate
+    ? 0
+    : quote.tax_inclusion === "inclusive"
+      ? Math.round((taxableAmount * taxRate) / (100 + taxRate))
+      : Math.round((taxableAmount * taxRate) / 100);
+  const invoiceTotal = productPrice + shippingFee + (isQuoteV2 && quote.tax_inclusion === "exclusive" ? taxAmount : 0);
+
+  return {
+    version: isQuoteV2 ? 2 : 1,
+    adjustment: isQuoteV2 ? money(quote.adjustment) : productPrice - money(itemSubtotal),
+    item_subtotal: money(itemSubtotal),
+    product_price: productPrice,
+    shipping_fee_configured: configuredShippingFee,
+    shipping_fee: shippingFee,
+    shipping_payer: isQuoteV2 ? quote.shipping_payer : "customer",
+    tax_rate: taxRate,
+    tax_inclusion: isQuoteV2 ? quote.tax_inclusion : "exclusive",
+    tax_base: isQuoteV2 ? quote.tax_base : "products",
+    taxable_amount: taxableAmount,
+    tax_amount: taxAmount,
+    invoice_total: invoiceTotal,
+    net_revenue: invoiceTotal - taxAmount,
+  };
 }
 
 function parseNumber(value) {
@@ -859,7 +1040,13 @@ function normalizePhone(phone) {
 function customerSpend(customerId, data) {
   return data.orders
     .filter((order) => order.customer_id === customerId && order.status !== "huy_hoan")
-    .reduce((sum, order) => sum + money(order.price), 0);
+    .reduce((sum, order) => {
+      const items = normalizeOrderItems(order, data);
+      const itemSubtotal = items.reduce((total, item) => total + money(item.unit_price) * Number(item.quantity || 1), 0);
+      const shipment = data.shipments.find((item) => item.id === order.shipment_id || item.order_id === order.id) || null;
+      const shippingCost = money(order.shipping_cost || shipment?.fee);
+      return sum + calculateOrderQuote(order, itemSubtotal, shippingCost).invoice_total;
+    }, 0);
 }
 
 function decorateCustomer(customer, data) {
@@ -891,12 +1078,13 @@ function decorateOrder(order, data) {
   const shippingCost = money(order.shipping_cost || (shipment && shipment.fee));
   const totalCost = itemCost + sourceCost + materialCost + shippingCost;
   const itemSubtotal = items.reduce((sum, item) => sum + money(item.unit_price) * Number(item.quantity || 1), 0);
+  const quote = calculateOrderQuote(order, itemSubtotal, shippingCost);
   const profitRate = Number(order.pricing?.profit_rate || 0);
-  const taxRate = Number(order.pricing?.tax_rate || 0);
   const pricingProfit = roundTo(totalCost * (profitRate / 100));
-  const priceBeforeTax = totalCost + pricingProfit;
-  const pricingTax = roundTo(priceBeforeTax * (taxRate / 100));
-  const suggestedPrice = totalCost > 0 ? priceBeforeTax + pricingTax : itemSubtotal;
+  const legacyTaxRate = Number(order.pricing?.tax_rate || 0);
+  const legacyPriceBeforeTax = totalCost + pricingProfit;
+  const legacyPricingTax = roundTo(legacyPriceBeforeTax * (legacyTaxRate / 100));
+  const suggestedPrice = totalCost > 0 ? legacyPriceBeforeTax + legacyPricingTax : itemSubtotal;
   const paidAmount = payments.reduce((sum, payment) => {
     return sum + (payment.type === "hoan_tien" ? -money(payment.amount) : money(payment.amount));
   }, 0);
@@ -922,18 +1110,25 @@ function decorateOrder(order, data) {
     source_cost: sourceCost,
     material_cost: materialCost,
     shipping_cost: shippingCost,
+    shipping_fee: quote.shipping_fee,
     total_cost: totalCost,
-    profit: money(order.price) - totalCost,
+    price: quote.product_price,
+    price_adjustment: quote.adjustment,
+    tax_amount: quote.tax_amount,
+    invoice_total: quote.invoice_total,
+    net_revenue: quote.net_revenue,
+    profit: quote.net_revenue - totalCost,
+    quote,
     pricing: {
       profit_rate: profitRate,
-      tax_rate: taxRate,
+      tax_rate: legacyTaxRate,
       profit_amount: pricingProfit,
-      price_before_tax: priceBeforeTax,
-      tax_amount: pricingTax,
+      price_before_tax: legacyPriceBeforeTax,
+      tax_amount: legacyPricingTax,
       suggested_price: suggestedPrice,
     },
     paid_amount: paidAmount,
-    balance_due: Math.max(0, money(order.price) - paidAmount),
+    balance_due: Math.max(0, quote.invoice_total - paidAmount),
     days_since_order: daysSinceOrder,
     payment_month: order.payment_date ? order.payment_date.slice(0, 7) : null,
     overdue: due ? due.getTime() < Date.now() && !["hoan_tat", "huy_hoan"].includes(order.status) : false,
@@ -964,6 +1159,75 @@ function decoratedData(data) {
       vtp_status_map: VTP_STATUS_MAP,
     },
   };
+}
+
+function buildBootstrapPayload(data, role = "admin") {
+  const payload = decoratedData(data);
+  const canSeeCosts = ["admin", "accounting", "ops"].includes(role);
+  const canSeeFinancials = ["admin", "accounting"].includes(role);
+
+  delete payload.users;
+  if (role !== "admin") payload.audit_logs = [];
+  if (!["admin", "accounting"].includes(role)) payload.expenses = [];
+  if (!["admin", "ops"].includes(role)) payload.inventory_movements = [];
+
+  if (!canSeeCosts) {
+    payload.order_sourcing_lines = [];
+    payload.gold_prices = [];
+    payload.market_price_snapshots = [];
+    delete payload.market_price_cache;
+    payload.settings = {
+      ...payload.settings,
+      material_catalog: (payload.settings?.material_catalog || []).map((material) => {
+        const next = { ...material };
+        delete next.default_price;
+        return next;
+      }),
+      metal_price_overrides: {},
+      metal_price_rules: {},
+    };
+    payload.products = payload.products.map((product) => {
+      const next = { ...product };
+      delete next.default_cost;
+      return next;
+    });
+    payload.orders = payload.orders.map((order) => {
+      const next = {
+        ...order,
+        items: order.items.map((item) => {
+          const nextItem = { ...item };
+          if (nextItem.product_mode !== "custom") delete nextItem.unit_cost;
+          if (nextItem.metal_pricing) {
+            nextItem.metal_pricing = {
+              mode: nextItem.metal_pricing.mode,
+              unit: nextItem.metal_pricing.unit,
+              weight: nextItem.metal_pricing.weight,
+            };
+          }
+          return nextItem;
+        }),
+        sourcing_lines: [],
+      };
+      ["item_cost", "source_cost", "material_cost", "total_cost"].forEach((field) => delete next[field]);
+      return next;
+    });
+  }
+
+  if (!canSeeFinancials) {
+    payload.orders = payload.orders.map((order) => {
+      const next = { ...order };
+      delete next.profit;
+      if (next.pricing) {
+        next.pricing = {
+          profit_rate: next.pricing.profit_rate,
+          tax_rate: next.pricing.tax_rate,
+        };
+      }
+      return next;
+    });
+  }
+
+  return payload;
 }
 
 function parsePath(url) {
@@ -1016,20 +1280,87 @@ function toCsv(rows) {
   return `\uFEFF${rows.map((row) => row.map(csvEscape).join(",")).join("\n")}\n`;
 }
 
+function formatCsvDate(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : "";
+}
+
+function uniqueCsvValues(values) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))].join(" | ");
+}
+
+function customerFullAddress(customer = {}) {
+  return uniqueCsvValues([customer.address, customer.ward, customer.district, customer.province]);
+}
+
 function getOrderCsv(data, role = "admin") {
   const canSeeCosts = ["admin", "accounting", "ops"].includes(role);
   const canSeeFinancials = ["admin", "accounting"].includes(role);
   const rows = [
-    ["Mã đơn", "Khách", "SĐT", "Trạng thái", "Sản phẩm", "Doanh thu", "Giá vốn", "Lợi nhuận", "Đã thu", "Còn thu"],
+    [
+      "Mã đơn",
+      "Khách",
+      "SĐT",
+      "Địa chỉ",
+      "Kênh",
+      "Account",
+      "Trạng thái",
+      "Trạng thái thanh toán",
+      "Người phụ trách",
+      "Ngày đặt",
+      "Due date",
+      "Số lượng SP",
+      "Sản phẩm",
+      "Sản phẩm chi tiết",
+      "Size",
+      "Chất liệu",
+      "Đá / charm",
+      "Yêu cầu",
+      "Ghi chú",
+      "Giá sản phẩm",
+      "Điều chỉnh giá",
+      "Phí ship thu khách",
+      "Thuế",
+      "Tổng thanh toán",
+      "Doanh thu thuần",
+      "Chi phí ship thực tế",
+      "Giá vốn",
+      "Lợi nhuận",
+      "Đã thu",
+      "Còn thu",
+    ],
   ];
   decoratedData(data).orders.forEach((order) => {
+    const productDetails = order.items
+      .map((item) => `${item.product_name || "Sản phẩm"} x${Number(item.quantity || 1)}`)
+      .join(" | ");
     rows.push([
       order.order_code,
       order.customer?.full_name || "",
       order.customer?.phone || "",
+      customerFullAddress(order.customer),
+      order.customer?.channel || "",
+      order.customer?.account || "",
       ORDER_STATUSES.find((status) => status.id === order.status)?.label || order.status,
+      PAYMENT_STATUSES.find((status) => status.id === order.payment_status)?.label || order.payment_status,
+      order.assignee || "",
+      formatCsvDate(order.date_order),
+      formatCsvDate(order.due_date),
+      order.product_count,
       order.product_summary || `${order.product_type} - ${order.product_name}`,
+      productDetails,
+      uniqueCsvValues(order.items.map((item) => item.size)),
+      uniqueCsvValues(order.items.map((item) => item.specs?.material)),
+      uniqueCsvValues(order.items.map((item) => item.specs?.stone)),
+      order.request || "",
+      order.note || "",
       order.price,
+      order.price_adjustment,
+      order.shipping_fee,
+      order.tax_amount,
+      order.invoice_total,
+      order.net_revenue,
+      order.shipping_cost,
       canSeeCosts ? order.total_cost : "Ẩn theo quyền",
       canSeeFinancials ? order.profit : "Ẩn theo quyền",
       order.paid_amount,
@@ -1055,6 +1386,7 @@ function quoteShipment(payload) {
 
 function renderReceipt(order, lang) {
   const isEn = lang === "en";
+  const receiptLogo = `data:image/png;base64,${fs.readFileSync(RECEIPT_LOGO_PATH).toString("base64")}`;
   const items = (order.items || []).map((item) => ({
     quantity: Number(item.quantity || 1),
     name: item.product_name,
@@ -1074,13 +1406,18 @@ function renderReceipt(order, lang) {
         customer: "Customer",
         tel: "Tel",
         address: "Address",
+        code: "Invoice no.",
         item: "Item",
         qty: "Qty",
+        unitPrice: "Unit price",
         total: "Total",
+        products: "Products",
+        adjustment: "Price adjustment",
         ship: "Shipping fee",
-        subtotal: "Subtotal",
+        tax: "Tax",
+        taxIncluded: "Included tax",
+        subtotal: "Total payable",
         thanks: "Thanks for letting us add a little sparkle to your story.",
-        note: "This is a browser print view. Use Print to save it as PDF.",
         print: "Print / Save PDF",
       }
     : {
@@ -1089,13 +1426,18 @@ function renderReceipt(order, lang) {
         customer: "Khách hàng",
         tel: "SĐT",
         address: "Địa chỉ",
+        code: "Mã hóa đơn",
         item: "Hạng mục",
         qty: "SL",
+        unitPrice: "Đơn giá",
         total: "Thành tiền",
+        products: "Tổng sản phẩm",
+        adjustment: "Điều chỉnh giá",
         ship: "Phí ship",
+        tax: "Thuế",
+        taxIncluded: "Thuế đã gồm trong giá",
         subtotal: "Tổng cộng",
         thanks: "Cảm ơn bạn đã để Trinket thêm một chút lấp lánh vào câu chuyện của mình.",
-        note: "Đây là trang in của trình duyệt. Dùng In để lưu thành PDF.",
         print: "In / Lưu PDF",
       };
 
@@ -1106,63 +1448,97 @@ function renderReceipt(order, lang) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${labels.title} ${order.order_code}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    body { margin: 0; background: #f4f5f2; color: #24211d; font: 14px/1.5 Inter, Arial, sans-serif; }
-    .sheet { width: min(820px, calc(100% - 32px)); margin: 32px auto; background: #fff; border: 1px solid #dedbd2; padding: 48px; }
-    .brand { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; border-bottom: 1px solid #dedbd2; padding-bottom: 24px; }
-    h1 { margin: 0; font-size: 34px; letter-spacing: 0; }
-    .logo { font-size: 28px; font-weight: 750; color: #7c2638; }
-    .muted { color: #706c64; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 28px 0; }
-    table { width: 100%; border-collapse: collapse; margin-top: 24px; }
-    th, td { padding: 12px 10px; border-bottom: 1px solid #e6e2d8; text-align: left; vertical-align: top; }
-    th { color: #706c64; font-size: 12px; text-transform: uppercase; }
-    .money, th.money { text-align: right; white-space: nowrap; }
-    .totals { margin-left: auto; width: min(360px, 100%); margin-top: 22px; }
-    .line { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #eee9de; }
-    .grand { font-size: 18px; font-weight: 750; color: #7c2638; }
-    .thanks { margin-top: 40px; font-size: 16px; color: #3f5145; }
-    .note { margin-top: 10px; color: #706c64; font-size: 12px; }
-    .actions { width: min(820px, calc(100% - 32px)); margin: 0 auto 32px; text-align: right; }
-    button { background: #24211d; color: #fff; border: 0; border-radius: 6px; padding: 10px 14px; cursor: pointer; }
-    @media print { body { background: #fff; } .sheet { margin: 0; width: auto; border: 0; } .actions { display: none; } }
-    @media (max-width: 640px) { .sheet { padding: 28px; } .grid { grid-template-columns: 1fr; } }
+    :root { --brand: #8F1D26; --brand-dark: #65141B; --brand-light: #F7EDEF; --ink: #24211F; --muted: #746F68; --bg: #FCFBF8; --surface: #FFFFFF; --surface-2: #F7F5F0; --line: #E8E2DA; --row-line: #F0EBE3; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 13.75px/1.55 "Be Vietnam Pro", Arial, sans-serif; }
+    .sheet { width: min(820px, calc(100% - 32px)); min-height: 1120px; margin: 28px auto; background: var(--surface); border: 1px solid var(--line); padding: 50px 54px 44px; }
+    .brand { display: flex; justify-content: space-between; align-items: flex-start; gap: 32px; border-bottom: 1px solid var(--line); padding-bottom: 25px; }
+    .brand-meta { text-align: right; }
+    h1 { margin: 0 0 12px; color: var(--brand); font-size: 29px; font-weight: 300; line-height: 1.2; letter-spacing: .12em; text-transform: uppercase; }
+    .logo { display: block; width: 150px; max-width: 100%; height: auto; object-fit: contain; object-position: left top; }
+    .meta-line { margin: 3px 0; font-size: 12.25px; }
+    .meta-line strong { color: var(--ink); font-weight: 600; }
+    .muted { color: var(--muted); }
+    .customer-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(190px, .6fr); gap: 13px 32px; margin: 26px 0 30px; }
+    .customer-grid .full { grid-column: 1 / -1; }
+    .info-label { display: block; margin-bottom: 4px; color: var(--muted); font-size: 10.75px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+    .customer-grid { font-size: 14.25px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; page-break-inside: auto; }
+    tr { break-inside: avoid; page-break-inside: avoid; }
+    th, td { padding: 11px 9px; border-bottom: 1px solid var(--row-line); text-align: left; vertical-align: top; }
+    th { border-top: 1px solid var(--line); border-bottom-color: var(--line); background: transparent; color: var(--muted); font-size: 10.25px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+    td { font-size: 13.5px; }
+    td strong { font-weight: 600; }
+    .description { display: block; margin-top: 3px; font-size: 11.75px; }
+    .quantity { width: 52px; text-align: center; font-variant-numeric: tabular-nums; }
+    .money, th.money { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .totals { margin-left: auto; width: min(390px, 100%); margin-top: 24px; }
+    .line { display: flex; justify-content: space-between; gap: 20px; padding: 9px 11px; border-bottom: 1px solid var(--row-line); font-size: 13.5px; }
+    .line strong { font-variant-numeric: tabular-nums; text-align: right; }
+    .grand { margin-top: 5px; padding: 13px 10px; border-top: 1.5px solid var(--ink); border-bottom: 3px double var(--ink); background: transparent; color: var(--ink); font-size: 17px; font-weight: 800; }
+    .thanks { margin: 42px 0 0; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+    .actions { position: fixed; right: 22px; bottom: 22px; z-index: 10; width: auto; margin: 0; text-align: right; }
+    button { min-height: 42px; padding: 10px 16px; border: 1px solid var(--brand-dark); border-radius: 6px; background: var(--brand); box-shadow: 0 8px 22px rgba(36, 33, 31, .16); color: #fff; font: 600 12.5px/1.2 "Be Vietnam Pro", Arial, sans-serif; cursor: pointer; }
+    button:hover { background: var(--brand-dark); }
+    @page { size: A4; margin: 0; }
+    @media print {
+      html, body { width: 210mm; min-height: 297mm; background: #fff; }
+      .sheet { margin: 0; width: 210mm; min-height: 297mm; border: 0; padding: 15mm 17mm 13mm; }
+      th, .grand { background: transparent !important; }
+      .grand { color: #000; border-color: #000; }
+      .actions { display: none; }
+    }
+    @media (max-width: 640px) {
+      .sheet { width: 100%; min-height: 100vh; margin: 0; padding: 28px 22px; border: 0; }
+      .brand { gap: 18px; }
+      .logo { width: 124px; }
+      h1 { font-size: 22px; }
+      .customer-grid { grid-template-columns: 1fr; }
+      .customer-grid .full { grid-column: auto; }
+      th.unit-price, td.unit-price { display: none; }
+      .actions { right: 12px; bottom: 12px; }
+    }
   </style>
 </head>
 <body>
   <main class="sheet">
     <section class="brand">
       <div>
-        <div class="logo">Trinket</div>
-        <p class="muted">${order.order_code}</p>
+        <img class="logo" src="${receiptLogo}" alt="Trinket">
       </div>
-      <div>
+      <div class="brand-meta">
         <h1>${labels.title}</h1>
-        <p class="muted">${labels.date}: ${new Intl.DateTimeFormat("vi-VN", { timeZone: BUSINESS_TIME_ZONE }).format(new Date())}</p>
+        <p class="meta-line"><span class="muted">${labels.code}:</span> <strong>${order.order_code}</strong></p>
+        <p class="meta-line"><span class="muted">${labels.date}:</span> <strong>${new Intl.DateTimeFormat("vi-VN", { timeZone: BUSINESS_TIME_ZONE }).format(new Date())}</strong></p>
       </div>
     </section>
-    <section class="grid">
-      <div><strong>${labels.customer}</strong><br>${order.customer?.full_name || ""}</div>
-      <div><strong>${labels.tel}</strong><br>${order.customer?.phone || ""}</div>
-      <div style="grid-column: 1 / -1"><strong>${labels.address}</strong><br>${order.customer?.address || ""}</div>
+    <section class="customer-grid">
+      <div><span class="info-label">${labels.customer}</span><strong>${order.customer?.full_name || ""}</strong></div>
+      <div><span class="info-label">${labels.tel}</span>${order.customer?.phone || ""}</div>
+      <div class="full"><span class="info-label">${labels.address}</span>${order.customer?.address || ""}</div>
     </section>
     <table>
-      <thead><tr><th>${labels.item}</th><th>${labels.qty}</th><th class="money">${labels.total}</th></tr></thead>
+      <thead><tr><th>${labels.item}</th><th class="quantity">${labels.qty}</th><th class="money unit-price">${labels.unitPrice}</th><th class="money">${labels.total}</th></tr></thead>
       <tbody>
         ${items
           .map(
-            (item) => `<tr><td><strong>${item.name}</strong><br><span class="muted">${item.description}</span></td><td>${item.quantity}</td><td class="money">${fmt.format(item.unit_price * item.quantity)}</td></tr>`,
+            (item) => `<tr><td><strong>${item.name}</strong><span class="description muted">${item.description}</span></td><td class="quantity">${item.quantity}</td><td class="money unit-price">${fmt.format(item.unit_price)}</td><td class="money">${fmt.format(item.unit_price * item.quantity)}</td></tr>`,
           )
           .join("")}
       </tbody>
     </table>
     <section class="totals">
-      <div class="line"><span>${labels.total}</span><strong>${fmt.format(order.price)}</strong></div>
-      <div class="line"><span>${labels.ship}</span><strong>${fmt.format(order.shipping_cost)}</strong></div>
-      <div class="line grand"><span>${labels.subtotal}</span><strong>${fmt.format(order.price + order.shipping_cost)}</strong></div>
+      <div class="line"><span>${labels.products}</span><strong>${fmt.format(order.item_subtotal)}</strong></div>
+      ${order.price_adjustment ? `<div class="line"><span>${labels.adjustment}</span><strong>${fmt.format(order.price_adjustment)}</strong></div>` : ""}
+      <div class="line" data-receipt-line="shipping"><span>${labels.ship}</span><strong>${fmt.format(order.shipping_fee)}</strong></div>
+      <div class="line" data-receipt-line="tax"><span>${order.quote?.tax_inclusion === "inclusive" ? labels.taxIncluded : labels.tax} (${order.quote?.tax_rate || 0}%)</span><strong>${fmt.format(order.tax_amount)}</strong></div>
+      <div class="line grand"><span>${labels.subtotal}</span><strong>${fmt.format(order.invoice_total)}</strong></div>
     </section>
     <p class="thanks">${labels.thanks}</p>
-    <p class="note">${labels.note}</p>
   </main>
   <div class="actions"><button onclick="window.print()">${labels.print}</button></div>
 </body>
@@ -1175,9 +1551,11 @@ async function routeApi(req, res, pathname, searchParams) {
   if (req.method === "GET" && pathname === "/api/bootstrap") {
     const marketPrices = await getMarketPrices(data);
     if (marketPrices.changed) await writeStore(data, req.user);
-    const payload = decoratedData(data);
-    delete payload.users;
-    json(res, 200, { ...payload, market_prices: marketPrices.payload });
+    const payload = buildBootstrapPayload(data, req.user.role);
+    json(res, 200, {
+      ...payload,
+      market_prices: ["admin", "accounting", "ops"].includes(req.user.role) ? marketPrices.payload : null,
+    });
     return;
   }
 
@@ -1333,6 +1711,9 @@ async function routeApi(req, res, pathname, searchParams) {
   if (req.method === "POST" && pathname === "/api/materials") {
     const body = await readBody(req);
     if (!String(body.name || "").trim()) return json(res, 400, { error: "Tên chất liệu là bắt buộc" });
+    if (Object.prototype.hasOwnProperty.call(body, "default_price")) {
+      parseRequestMoney(body.default_price, "Giá cơ sở chất liệu");
+    }
     const material = normalizeMaterial({ ...body, id: id("mat") }, data.settings.material_catalog.length);
     data.settings.material_catalog.push(material);
     audit(data, "create", "material", material.id, material);
@@ -1344,6 +1725,9 @@ async function routeApi(req, res, pathname, searchParams) {
   const materialMatch = pathname.match(/^\/api\/materials\/([^/]+)$/);
   if (materialMatch && req.method === "PATCH") {
     const body = await readBody(req);
+    if (Object.prototype.hasOwnProperty.call(body, "default_price")) {
+      parseRequestMoney(body.default_price, "Giá cơ sở chất liệu");
+    }
     const index = data.settings.material_catalog.findIndex((material) => material.id === materialMatch[1]);
     if (index === -1) return json(res, 404, { error: "Material not found" });
     const before = { ...data.settings.material_catalog[index] };
@@ -1385,6 +1769,22 @@ async function routeApi(req, res, pathname, searchParams) {
 
   if (req.method === "POST" && pathname === "/api/products") {
     const body = await readBody(req);
+    ["default_price", "default_cost"].forEach((field) => {
+      if (Object.prototype.hasOwnProperty.call(body, field)) {
+        parseRequestMoney(body[field], {
+          default_price: "Giá bán mặc định",
+          default_cost: "Giá vốn mặc định",
+        }[field]);
+      }
+    });
+    ["initial_stock", "low_stock_threshold"].forEach((field) => {
+      if (Object.prototype.hasOwnProperty.call(body, field)) {
+        parseRequestNonNegativeNumber(body[field], {
+          initial_stock: "Tồn đầu kỳ",
+          low_stock_threshold: "Ngưỡng sắp hết",
+        }[field]);
+      }
+    });
     const sku = String(body.sku || "").trim();
     if (!sku) return json(res, 400, { error: "Mã mẫu là bắt buộc" });
     if (data.products.some((product) => String(product.sku).toLowerCase() === sku.toLowerCase())) {
@@ -1436,6 +1836,17 @@ async function routeApi(req, res, pathname, searchParams) {
   const productMatch = pathname.match(/^\/api\/products\/([^/]+)$/);
   if (productMatch && req.method === "PATCH") {
     const body = await readBody(req);
+    ["default_price", "default_cost"].forEach((field) => {
+      if (Object.prototype.hasOwnProperty.call(body, field)) {
+        parseRequestMoney(body[field], {
+          default_price: "Giá bán mặc định",
+          default_cost: "Giá vốn mặc định",
+        }[field]);
+      }
+    });
+    if (Object.prototype.hasOwnProperty.call(body, "low_stock_threshold")) {
+      parseRequestNonNegativeNumber(body.low_stock_threshold, "Ngưỡng sắp hết");
+    }
     const product = findById(data.products, productMatch[1]);
     if (!product) return json(res, 404, { error: "Product not found" });
     const sku = String(body.sku ?? product.sku).trim();
@@ -1614,12 +2025,13 @@ async function routeApi(req, res, pathname, searchParams) {
 
   if (req.method === "POST" && pathname === "/api/expenses") {
     const body = await readBody(req);
+    validateOptionalDate(body.date || todayIso(), "Ngày chi");
     const expense = {
       id: id("exp"),
       date: body.date || todayIso(),
       category: body.category || "Khác",
       description: body.description || "",
-      amount: money(body.amount),
+      amount: parseRequestMoney(body.amount, "Khoản chi", { nonZero: true }),
       attachment: body.attachment || "",
     };
     data.expenses.push(expense);
@@ -1634,11 +2046,14 @@ async function routeApi(req, res, pathname, searchParams) {
     const body = await readBody(req);
     const expense = findById(data.expenses, expenseMatch[1]);
     if (!expense) return json(res, 404, { error: "Expense not found" });
+    if (Object.prototype.hasOwnProperty.call(body, "date")) validateOptionalDate(body.date, "Ngày chi");
     const before = { ...expense };
     ["date", "category", "description", "attachment"].forEach((field) => {
       if (Object.prototype.hasOwnProperty.call(body, field)) expense[field] = body[field] || "";
     });
-    if (Object.prototype.hasOwnProperty.call(body, "amount")) expense.amount = money(body.amount);
+    if (Object.prototype.hasOwnProperty.call(body, "amount")) {
+      expense.amount = parseRequestMoney(body.amount, "Khoản chi", { nonZero: true });
+    }
     audit(data, "update", "expense", expense.id, { before, after: expense });
     await writeStore(data, req.user);
     json(res, 200, expense);
@@ -1662,7 +2077,7 @@ async function routeApi(req, res, pathname, searchParams) {
     const payment = {
       id: id("pay"),
       order_id: body.order_id,
-      amount: money(body.amount),
+      amount: parseRequestMoney(body.amount, "Thanh toán", { nonZero: true }),
       type: body.type || "thanh_toan_con_lai",
       method: body.method || "Chuyển khoản",
       paid_at: body.paid_at || new Date().toISOString(),
@@ -1684,7 +2099,9 @@ async function routeApi(req, res, pathname, searchParams) {
     ["type", "method", "paid_at"].forEach((field) => {
       if (Object.prototype.hasOwnProperty.call(body, field)) payment[field] = body[field] || "";
     });
-    if (Object.prototype.hasOwnProperty.call(body, "amount")) payment.amount = money(body.amount);
+    if (Object.prototype.hasOwnProperty.call(body, "amount")) {
+      payment.amount = parseRequestMoney(body.amount, "Thanh toán", { nonZero: true });
+    }
     const order = findById(data.orders, payment.order_id);
     syncOrderPaymentStatus(order, data);
     audit(data, "update", "payment", payment.id, { before, after: payment });
@@ -1707,6 +2124,7 @@ async function routeApi(req, res, pathname, searchParams) {
 
   if (req.method === "POST" && pathname === "/api/orders") {
     const body = await readBody(req);
+    validateOrderRequest(body);
     let customerId = body.customer_id;
     if (!customerId && body.customer) {
       const phone = normalizePhone(body.customer.phone);
@@ -1757,13 +2175,19 @@ async function routeApi(req, res, pathname, searchParams) {
         }];
     let preparedItems;
     try {
-      preparedItems = prepareIncomingOrderItems(rawItems, orderId);
+      preparedItems = protectOrderItemCosts(
+        prepareIncomingOrderItems(rawItems, orderId),
+        null,
+        data,
+        req.user.role,
+      );
     } catch (error) {
       return json(res, 400, { error: error.message });
     }
     const items = normalizeOrderItems({ id: orderId, items: preparedItems }, data);
     const firstItem = items[0];
     const itemSubtotal = items.reduce((sum, item) => sum + money(item.unit_price) * Number(item.quantity || 1), 0);
+    const quote = normalizeOrderQuote(body.quote);
     const order = {
       id: orderId,
       order_code: makeOrderCode(data),
@@ -1774,19 +2198,24 @@ async function routeApi(req, res, pathname, searchParams) {
       product_name: firstItem.product_name,
       size: firstItem.size,
       items,
-      price: Object.prototype.hasOwnProperty.call(body, "price") ? money(body.price) : itemSubtotal,
+      price: quote
+        ? itemSubtotal + quote.adjustment
+        : Object.prototype.hasOwnProperty.call(body, "price")
+          ? parseRequestMoney(body.price, "Giá deal")
+          : itemSubtotal,
       request: body.request || "",
       date_order: body.date_order || todayIso(),
       due_date: body.due_date || "",
       payment_date: body.payment_date || "",
       payment_status: body.payment_status || "chua_coc",
-      shipping_cost: money(body.shipping_cost),
+      shipping_cost: parseRequestMoney(body.shipping_cost ?? 0, "Phí giao"),
       shipment_id: null,
       assignee: body.assignee || "Sale",
       product_specs: firstItem.specs || {},
+      ...(quote ? { quote } : {}),
       pricing: {
-        profit_rate: Number(body.pricing?.profit_rate || 0),
-        tax_rate: Number(body.pricing?.tax_rate || 0),
+        profit_rate: req.user.role === "sale" ? 0 : Number(body.pricing?.profit_rate || 0),
+        tax_rate: req.user.role === "sale" ? 0 : Number(body.pricing?.tax_rate || 0),
       },
       attachments: [],
       note: body.note || "",
@@ -1800,15 +2229,15 @@ async function routeApi(req, res, pathname, searchParams) {
     }
     data.orders.push(order);
     syncOrderInventoryMovements(order, data);
-    (body.sourcing_lines || [])
-      .filter((line) => line.vendor_id || line.material || Number(line.cost) > 0)
+    (req.user.role === "sale" ? [] : (body.sourcing_lines || []))
+      .filter((line) => line.vendor_id || line.material || Number(line.cost) !== 0)
       .forEach((line) => {
         data.order_sourcing_lines.push({
           id: id("src"),
           order_id: order.id,
           vendor_id: line.vendor_id || data.vendors[0]?.id || "",
           material: line.material || "",
-          cost: money(line.cost),
+          cost: parseRequestMoney(line.cost ?? 0, "Chi phí nguồn hàng"),
           gold_karat: line.gold_karat || "",
           weight: Number(line.weight || 0),
           status: line.status || "Đã đặt",
@@ -1824,6 +2253,7 @@ async function routeApi(req, res, pathname, searchParams) {
   if (orderMatch && req.method === "PATCH") {
     const body = await readBody(req);
     assertOrderPatchAllowed(req.user, body);
+    validateOrderRequest(body);
     const order = findById(data.orders, orderMatch[1]);
     if (!order) return json(res, 404, { error: "Order not found" });
     if (body.customer_id && !findById(data.customers, body.customer_id)) return json(res, 400, { error: "Customer not found" });
@@ -1849,13 +2279,20 @@ async function routeApi(req, res, pathname, searchParams) {
     const sourceLinesBefore = data.order_sourcing_lines.filter((line) => line.order_id === order.id);
     allowed.forEach((field) => {
       if (Object.prototype.hasOwnProperty.call(body, field)) {
-        order[field] = ["price", "shipping_cost"].includes(field) ? money(body[field]) : body[field];
+        order[field] = ["price", "shipping_cost"].includes(field)
+          ? parseRequestMoney(body[field], field === "price" ? "Giá deal" : "Phí giao")
+          : body[field];
       }
     });
     if (Array.isArray(body.items) && body.items.length) {
       let preparedItems;
       try {
-        preparedItems = prepareIncomingOrderItems(body.items, order.id);
+        preparedItems = protectOrderItemCosts(
+          prepareIncomingOrderItems(body.items, order.id),
+          order,
+          data,
+          req.user.role,
+        );
       } catch (error) {
         return json(res, 400, { error: error.message });
       }
@@ -1867,10 +2304,17 @@ async function routeApi(req, res, pathname, searchParams) {
       order.size = firstItem.size;
       order.product_specs = firstItem.specs;
     }
-    if (body.pricing && typeof body.pricing === "object") {
+    if (body.quote && typeof body.quote === "object") {
+      order.quote = normalizeOrderQuote({ ...body.quote, version: 2 });
+    }
+    if (order.quote?.version >= 2) {
+      const itemSubtotal = order.items.reduce((sum, item) => sum + money(item.unit_price) * Number(item.quantity || 1), 0);
+      order.price = itemSubtotal + money(order.quote.adjustment);
+    }
+    if (req.user.role !== "sale" && body.pricing && typeof body.pricing === "object") {
       order.pricing = {
         profit_rate: Number(body.pricing.profit_rate || 0),
-        tax_rate: Number(body.pricing.tax_rate || 0),
+        tax_rate: Number(body.pricing.tax_rate ?? order.pricing?.tax_rate ?? 0),
       };
     }
     const preserveLegacyCompleted = before.status === "hoan_tat" && order.status === "hoan_tat" && !hadInventoryMovement;
@@ -1883,16 +2327,16 @@ async function routeApi(req, res, pathname, searchParams) {
         return json(res, 409, { error: error.message });
       }
     }
-    if (Array.isArray(body.sourcing_lines)) {
+    if (req.user.role !== "sale" && Array.isArray(body.sourcing_lines)) {
       const existingIds = new Set(sourceLinesBefore.map((line) => line.id));
       const nextLines = body.sourcing_lines
-        .filter((line) => line.vendor_id || line.material || money(line.cost) > 0)
+        .filter((line) => line.vendor_id || line.material || money(line.cost) !== 0)
         .map((line) => ({
           id: line.id && existingIds.has(line.id) ? line.id : id("src"),
           order_id: order.id,
           vendor_id: line.vendor_id || "",
           material: line.material || "",
-          cost: money(line.cost),
+          cost: parseRequestMoney(line.cost ?? 0, "Chi phí nguồn hàng"),
           gold_karat: line.gold_karat || "",
           weight: Number(line.weight || 0),
           status: line.status || "Đã đặt",
@@ -1923,12 +2367,24 @@ async function routeApi(req, res, pathname, searchParams) {
 
   if (req.method === "POST" && pathname === "/api/shipments/quote") {
     const body = await readBody(req);
+    if (Object.prototype.hasOwnProperty.call(body, "weight")) {
+      parseRequestMoney(body.weight, "Khối lượng", { positive: true });
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "cod_amount")) {
+      parseRequestMoney(body.cod_amount, "COD");
+    }
     json(res, 200, quoteShipment(body));
     return;
   }
 
   if (req.method === "POST" && pathname === "/api/shipments/create") {
     const body = await readBody(req);
+    if (Object.prototype.hasOwnProperty.call(body, "weight")) {
+      parseRequestMoney(body.weight, "Khối lượng", { positive: true });
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "cod_amount")) {
+      parseRequestMoney(body.cod_amount, "COD");
+    }
     const order = findById(data.orders, body.order_id);
     if (!order) return json(res, 404, { error: "Order not found" });
     const customer = findById(data.customers, order.customer_id) || {};
@@ -1939,7 +2395,9 @@ async function routeApi(req, res, pathname, searchParams) {
       carrier: "Viettel Post",
       tracking_code: `VTP${Date.now().toString().slice(-8)}${Math.floor(Math.random() * 90 + 10)}`,
       service_code: quote.service_code,
-      cod_amount: money(body.cod_amount || decorateOrder(order, data).balance_due),
+      cod_amount: Object.prototype.hasOwnProperty.call(body, "cod_amount")
+        ? parseRequestMoney(body.cod_amount, "COD")
+        : decorateOrder(order, data).balance_due,
       weight: Number(body.weight || 300),
       dimensions: body.dimensions || "12x10x6",
       fee: quote.fee,
@@ -1965,6 +2423,18 @@ async function routeApi(req, res, pathname, searchParams) {
   const shipmentMatch = pathname.match(/^\/api\/shipments\/([^/]+)$/);
   if (shipmentMatch && req.method === "PATCH") {
     const body = await readBody(req);
+    if (Object.prototype.hasOwnProperty.call(body, "expected_delivery")) {
+      validateOptionalDate(body.expected_delivery, "Ngày dự kiến giao");
+    }
+    ["cod_amount", "weight", "fee"].forEach((field) => {
+      if (Object.prototype.hasOwnProperty.call(body, field)) {
+        parseRequestMoney(body[field], {
+          cod_amount: "COD",
+          weight: "Khối lượng",
+          fee: "Cước vận chuyển",
+        }[field], { positive: field === "weight" });
+      }
+    });
     const shipment = findById(data.shipments, shipmentMatch[1]);
     if (!shipment) return json(res, 404, { error: "Shipment not found" });
     const before = { ...shipment };
@@ -1972,7 +2442,13 @@ async function routeApi(req, res, pathname, searchParams) {
       if (Object.prototype.hasOwnProperty.call(body, field)) shipment[field] = body[field] || "";
     });
     ["cod_amount", "weight", "fee"].forEach((field) => {
-      if (Object.prototype.hasOwnProperty.call(body, field)) shipment[field] = money(body[field]);
+      if (Object.prototype.hasOwnProperty.call(body, field)) {
+        shipment[field] = parseRequestMoney(body[field], {
+          cod_amount: "COD",
+          weight: "Khối lượng",
+          fee: "Cước vận chuyển",
+        }[field], { positive: field === "weight" });
+      }
     });
     if (Object.prototype.hasOwnProperty.call(body, "status")) {
       shipment.status = body.status || shipment.status;
@@ -2106,5 +2582,16 @@ if (process.argv[1] && path.resolve(process.argv[1]) === SERVER_PATH) {
   });
 }
 
-export { addIsoDays, businessDateIso, getMarketPrices, normalizeData };
+export {
+  addIsoDays,
+  buildBootstrapPayload,
+  businessDateIso,
+  calculateOrderQuote,
+  getMarketPrices,
+  getOrderCsv,
+  isValidIsoDate,
+  normalizeData,
+  parseRequestMoney,
+  protectOrderItemCosts,
+};
 export default handleRequest;
