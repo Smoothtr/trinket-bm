@@ -15,6 +15,9 @@ import {
 } from "./lib/account-admin.mjs";
 import { getFirebaseServices } from "./lib/firebase-admin.mjs";
 import { createStore } from "./lib/store.mjs";
+import {
+  ADDRESS_FIELDS, orderDelivery, resolveOrderCustomer, prepareOrderDelivery, applyCustomerPatch,
+} from "./lib/customer-delivery.mjs";
 
 const PORT = Number(process.env.PORT || 4173);
 const SERVER_PATH = fileURLToPath(import.meta.url);
@@ -1033,10 +1036,6 @@ function findById(list, entityId) {
   return list.find((item) => item.id === entityId);
 }
 
-function normalizePhone(phone) {
-  return String(phone || "").replace(/[^\d+]/g, "");
-}
-
 function customerSpend(customerId, data) {
   return data.orders
     .filter((order) => order.customer_id === customerId && order.status !== "huy_hoan")
@@ -1100,6 +1099,7 @@ function decorateOrder(order, data) {
     product_count: items.reduce((sum, item) => sum + Number(item.quantity || 1), 0),
     item_subtotal: itemSubtotal,
     customer,
+    delivery: orderDelivery(order, data),
     sourcing_lines: sourceLines.map((line) => ({
       ...line,
       vendor: findById(data.vendors, line.vendor_id) || null,
@@ -1293,6 +1293,19 @@ function customerFullAddress(customer = {}) {
   return uniqueCsvValues([customer.address, customer.ward, customer.district, customer.province]);
 }
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+}
+
+function updateCustomerAddressForOrder(data, customer, delivery, orderId) {
+  const before = { ...customer };
+  const patch = Object.fromEntries(ADDRESS_FIELDS.map((key) => [key, delivery[key]]));
+  const preservedOrders = applyCustomerPatch(data, customer, patch);
+  audit(data, "update_address", "customer", customer.id, {
+    before, after: { ...customer }, order_id: orderId, preserved_orders: preservedOrders,
+  });
+}
+
 function getOrderCsv(data, role = "admin") {
   const canSeeCosts = ["admin", "accounting", "ops"].includes(role);
   const canSeeFinancials = ["admin", "accounting"].includes(role);
@@ -1336,9 +1349,9 @@ function getOrderCsv(data, role = "admin") {
       .join(" | ");
     rows.push([
       order.order_code,
-      order.customer?.full_name || "",
-      order.customer?.phone || "",
-      customerFullAddress(order.customer),
+      order.delivery?.full_name || "",
+      order.delivery?.phone || "",
+      customerFullAddress(order.delivery),
       order.customer?.channel || "",
       order.customer?.account || "",
       ORDER_STATUSES.find((status) => status.id === order.status)?.label || order.status,
@@ -1517,9 +1530,9 @@ function renderReceipt(order, lang) {
       </div>
     </section>
     <section class="customer-grid">
-      <div><span class="info-label">${labels.customer}</span><strong>${order.customer?.full_name || ""}</strong></div>
-      <div><span class="info-label">${labels.tel}</span>${order.customer?.phone || ""}</div>
-      <div class="full"><span class="info-label">${labels.address}</span>${order.customer?.address || ""}</div>
+      <div><span class="info-label">${labels.customer}</span><strong>${escapeHtml(order.delivery?.full_name || "")}</strong></div>
+      <div><span class="info-label">${labels.tel}</span>${escapeHtml(order.delivery?.phone || "")}</div>
+      <div class="full"><span class="info-label">${labels.address}</span>${escapeHtml(customerFullAddress(order.delivery))}</div>
     </section>
     <table>
       <thead><tr><th>${labels.item}</th><th class="quantity">${labels.qty}</th><th class="money unit-price">${labels.unitPrice}</th><th class="money">${labels.total}</th></tr></thead>
@@ -1936,6 +1949,7 @@ async function routeApi(req, res, pathname, searchParams) {
       province: body.province || "",
       district: body.district || "",
       ward: body.ward || "",
+      address_mode: body.address_mode || (body.province && !body.district ? "current" : "legacy"),
       note: body.note || "",
       created_at: new Date().toISOString(),
     };
@@ -1952,10 +1966,16 @@ async function routeApi(req, res, pathname, searchParams) {
     const customer = findById(data.customers, customerMatch[1]);
     if (!customer) return json(res, 404, { error: "Customer not found" });
     const before = { ...customer };
-    ["full_name", "phone", "address", "channel", "account", "province", "district", "ward", "note"].forEach((field) => {
-      if (Object.prototype.hasOwnProperty.call(body, field)) customer[field] = body[field] || "";
+    const patch = {};
+    ["full_name", "phone", "address", "channel", "account", "province", "district", "ward", "address_mode", "note"].forEach((field) => {
+      if (Object.prototype.hasOwnProperty.call(body, field)) patch[field] = body[field] || "";
     });
-    audit(data, "update", "customer", customer.id, { before, after: customer });
+    if (patch.address_mode && !["legacy", "current"].includes(patch.address_mode)) return json(res, 400, { error: "Cấu trúc địa chỉ không hợp lệ." });
+    if (!patch.address_mode && ("province" in patch || "district" in patch)) {
+      patch.address_mode = (patch.province ?? customer.province) && !(patch.district ?? customer.district) ? "current" : "legacy";
+    }
+    const preservedOrders = applyCustomerPatch(data, customer, patch);
+    audit(data, "update", "customer", customer.id, { before, after: customer, preserved_orders: preservedOrders });
     await writeStore(data, req.user);
     json(res, 200, decorateCustomer(customer, data));
     return;
@@ -2125,14 +2145,9 @@ async function routeApi(req, res, pathname, searchParams) {
   if (req.method === "POST" && pathname === "/api/orders") {
     const body = await readBody(req);
     validateOrderRequest(body);
-    let customerId = body.customer_id;
-    if (!customerId && body.customer) {
-      const phone = normalizePhone(body.customer.phone);
-      const existing = data.customers.find((customer) => normalizePhone(customer.phone) === phone && phone);
-      if (existing) {
-        customerId = existing.id;
-      } else {
-        const customer = {
+    let customer = resolveOrderCustomer(data, body);
+    if (!customer) {
+        customer = {
           id: id("cus"),
           full_name: body.customer.full_name || "Khách mới",
           phone: body.customer.phone || "",
@@ -2142,17 +2157,15 @@ async function routeApi(req, res, pathname, searchParams) {
           province: body.customer.province || "",
           district: body.customer.district || "",
           ward: body.customer.ward || "",
+          address_mode: body.customer.address_mode || (body.customer.province && !body.customer.district ? "current" : "legacy"),
           note: body.customer.note || "",
           created_at: new Date().toISOString(),
         };
         data.customers.push(customer);
-        customerId = customer.id;
         audit(data, "create", "customer", customer.id, customer);
-      }
     }
-    if (!customerId || !findById(data.customers, customerId)) {
-      return json(res, 400, { error: "A valid customer is required" });
-    }
+    const customerId = customer.id;
+    const delivery = prepareOrderDelivery(data, body, customer);
     const requestedOrderId = String(body.id || "").trim();
     if (requestedOrderId && !validClientId(requestedOrderId, "ord")) {
       return json(res, 400, { error: "Invalid order ID" });
@@ -2192,6 +2205,7 @@ async function routeApi(req, res, pathname, searchParams) {
       id: orderId,
       order_code: makeOrderCode(data),
       customer_id: customerId,
+      delivery,
       status: body.status || "tu_van",
       product_id: firstItem.product_id,
       product_type: firstItem.product_type,
@@ -2243,6 +2257,7 @@ async function routeApi(req, res, pathname, searchParams) {
           status: line.status || "Đã đặt",
         });
       });
+    if (body.update_customer_address) updateCustomerAddressForOrder(data, customer, delivery, order.id);
     audit(data, "create", "order", order.id, order);
     await writeStore(data, req.user);
     json(res, 201, decorateOrder(order, data));
@@ -2275,6 +2290,9 @@ async function routeApi(req, res, pathname, searchParams) {
       "note",
     ];
     const before = JSON.parse(JSON.stringify(order));
+    const customer = findById(data.customers, body.customer_id || order.customer_id);
+    if (!customer) return json(res, 409, { error: "Khách của deal không còn tồn tại." });
+    const delivery = prepareOrderDelivery(data, body, customer, order);
     const hadInventoryMovement = data.inventory_movements.some((movement) => movement.source_type === "order" && movement.source_id === order.id);
     const sourceLinesBefore = data.order_sourcing_lines.filter((line) => line.order_id === order.id);
     allowed.forEach((field) => {
@@ -2344,6 +2362,9 @@ async function routeApi(req, res, pathname, searchParams) {
       data.order_sourcing_lines = data.order_sourcing_lines.filter((line) => line.order_id !== order.id).concat(nextLines);
     }
     syncOrderInventoryMovements(order, data, { applyCompleted: !preserveLegacyCompleted });
+    // The order and optional profile update are persisted together below.
+    order.delivery = delivery;
+    if (body.update_customer_address) updateCustomerAddressForOrder(data, customer, delivery, order.id);
     order.updated_at = new Date().toISOString();
     audit(data, "update", "order", order.id, {
       before,
@@ -2373,7 +2394,9 @@ async function routeApi(req, res, pathname, searchParams) {
     if (Object.prototype.hasOwnProperty.call(body, "cod_amount")) {
       parseRequestMoney(body.cod_amount, "COD");
     }
-    json(res, 200, quoteShipment(body));
+    const order = body.order_id ? findById(data.orders, body.order_id) : null;
+    if (body.order_id && !order) return json(res, 404, { error: "Order not found" });
+    json(res, 200, quoteShipment(order ? { ...body, province: orderDelivery(order, data).province } : body));
     return;
   }
 
@@ -2387,12 +2410,14 @@ async function routeApi(req, res, pathname, searchParams) {
     }
     const order = findById(data.orders, body.order_id);
     if (!order) return json(res, 404, { error: "Order not found" });
-    const customer = findById(data.customers, order.customer_id) || {};
-    const quote = quoteShipment({ ...body, province: customer.province });
+    const delivery = orderDelivery(order, data);
+    const quote = quoteShipment({ ...body, province: delivery.province });
+    order.delivery = delivery;
     const shipment = {
       id: id("shp"),
       order_id: order.id,
       carrier: "Viettel Post",
+      delivery: { ...delivery },
       tracking_code: `VTP${Date.now().toString().slice(-8)}${Math.floor(Math.random() * 90 + 10)}`,
       service_code: quote.service_code,
       cod_amount: Object.prototype.hasOwnProperty.call(body, "cod_amount")
@@ -2571,7 +2596,7 @@ async function handleRequest(req, res) {
   } catch (error) {
     const statusCode = Number(error.statusCode || 500);
     if (statusCode >= 500) console.error(error);
-    json(res, statusCode, { error: error.message || "Internal server error" });
+    json(res, statusCode, { error: error.message || "Internal server error", ...(error.code ? { code: error.code } : {}) });
   }
 }
 

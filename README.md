@@ -136,11 +136,29 @@ Mật khẩu mặc định dùng chung là `Gg1234`. Nhân viên đăng nhập l
 
 ## Dữ liệu địa chỉ Việt Nam
 
+### Khách cũ và địa chỉ riêng cho deal
+
+- Khi tạo deal, nhập từ 3 chữ số SĐT để xem tối đa 5 gợi ý, chọn bằng chuột/chạm hoặc phím mũi tên và Enter.
+- Số Việt Nam ở dạng `0…`, `+84…`, `0084…` hoặc `84…` được đối chiếu về cùng số khi đủ độ dài hợp lệ. Các số quốc tế khác giữ mã quốc gia.
+- Khách đã chọn được liên kết bằng `customer_id`. Nếu số đã tồn tại mà chưa chọn khách, server trả 409; nhiều hồ sơ trùng số phải được chọn rõ ràng, không tự gộp.
+- Mỗi deal lưu `delivery`: tên/SĐT lúc chọn khách, `address`, `province`, `district`, `ward`, `address_mode` (`legacy` hoặc `current`). CRM và thống kê vẫn liên kết theo `customer_id`.
+- Địa chỉ điền sẵn có thể sửa riêng cho deal. Checkbox **Cập nhật địa chỉ này vào hồ sơ khách** mặc định tắt; chỉ cập nhật địa chỉ, không sửa tên/SĐT/kênh/account của hồ sơ.
+- Lưu deal và cập nhật địa chỉ mặc định trong cùng một lần ghi store. `expected_customer_address` ngăn một form cũ ghi đè địa chỉ hồ sơ vừa thay đổi.
+- Deal cũ chưa có `delivery` tiếp tục đọc địa chỉ hồ sơ hiện tại. Trước khi thay đổi hồ sơ, các deal cũ liên quan được giữ lại địa chỉ đang hiển thị trong cùng giao dịch. Không có migration chạy lúc khởi động hoặc khi đọc dữ liệu. Địa chỉ lịch sử đã mất trước đó không thể tự phục hồi.
+- Phiếu in, CSV, chi tiết deal và giao vận dùng địa chỉ riêng. Khi tạo vận đơn, địa chỉ được lưu trên cả vận đơn; deal có vận đơn không được đổi khách/địa chỉ trong luồng này.
+- Firestore giữ cơ chế kiểm tra revision và giới hạn 450 thao tác; vượt giới hạn thì từ chối toàn bộ thay đổi. JSON local cũng từ chối ghi từ snapshot cũ.
+- Các trường mới tương thích khi đọc dữ liệu cũ, nhưng bản ứng dụng trước thay đổi này không hiểu địa chỉ riêng: không rollback về bản cũ sau khi đã dùng tính năng mà không đánh giá tác động tới phiếu/giao vận.
+
 Form tạo deal và hồ sơ khách hàng hỗ trợ cả địa chỉ 3 cấp cũ (63 tỉnh/thành) và địa chỉ 2 cấp mới (34 tỉnh/thành). Dữ liệu được đóng gói trong `public/address-data.js` để không phụ thuộc API bên ngoài khi lên đơn, lấy từ dự án MIT [Vietnamese Provinces Database](https://github.com/thanglequoc/vietnamese-provinces-database).
 
 Chạy `npm run addresses:generate` khi cần tạo lại file dữ liệu từ các revision đã ghim trong `scripts/generate-address-data.mjs`.
 
 ## Kiểm thử
+
+Test trình duyệt mặc định dùng server JSON tạm riêng tại `127.0.0.1:4174`, không dùng `data/store.json`
+và không đụng server local tại cổng 4173. Có thể đổi cổng bằng `TRINKET_TEST_PORT`.
+Không đặt `BASE_URL` trỏ tới ứng dụng đang chứa dữ liệu cần giữ; bộ test có thao tác tạo/sửa/xóa.
+Cấu hình kiểm thử từ chối URL ngoài localhost.
 
 ```bash
 npm run check

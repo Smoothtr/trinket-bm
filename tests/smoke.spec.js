@@ -451,62 +451,29 @@ test("sửa giá và Lưu deal chỉ đóng popup sau khi API lưu thành công"
   expect(saved.orders.find((order) => order.id === orderId).price).toBe(3_850_000);
 });
 
-test("sửa deal cho phép sửa và lưu thông tin khách hàng", async ({ page }) => {
+test("sửa địa chỉ deal không tự sửa hồ sơ khách", async ({ page, request }) => {
   const baseUrl = process.env.BASE_URL || "http://localhost:4173";
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
-  await page.locator(".nav-item[data-view='orders']").click();
-  await page.locator("[data-action='edit-orders']").first().click();
-
-  const form = page.locator("#orderEditForm");
-  const customerSelect = form.locator("select[name='customer_id']");
-  const originalCustomerId = await customerSelect.inputValue();
-  const bootstrap = await (await page.request.get(`${baseUrl}/api/bootstrap`)).json();
-  const originalCustomer = bootstrap.customers.find((customer) => customer.id === originalCustomerId);
-  expect(originalCustomer).toBeTruthy();
-
-  await expect(form.locator("input[name='customer_full_name']")).toHaveValue(originalCustomer.full_name);
-  await expect(form.locator("input[name='customer_phone']")).toHaveValue(originalCustomer.phone);
-  await expect(form.locator("input[name='customer_address']")).toHaveValue(originalCustomer.address);
-  await expect(form.locator("select[name='customer_channel']")).toBeVisible();
-  await expect(form.locator("[data-address-picker]")).toBeVisible();
-
-  const anotherCustomer = bootstrap.customers.find((customer) => customer.id !== originalCustomerId);
-  if (anotherCustomer) {
-    await customerSelect.selectOption(anotherCustomer.id);
-    await expect(form.locator("input[name='customer_full_name']")).toHaveValue(anotherCustomer.full_name);
-    await customerSelect.selectOption(originalCustomerId);
-    await expect(form.locator("input[name='customer_full_name']")).toHaveValue(originalCustomer.full_name);
-  }
-
-  const updatedName = `${originalCustomer.full_name} QA`;
-  const updatedPhone = `${originalCustomer.phone}0`;
-  const updatedAddress = `${originalCustomer.address} QA`;
+  const initial = await (await request.get(baseUrl + "/api/bootstrap")).json();
+  const source = initial.customers[0];
+  const created = await request.post(baseUrl + "/api/orders", { data: { customer_id: source.id, product_name: "Địa chỉ riêng QA", price: 100000 } });
+  expect(created.status()).toBe(201);
+  const order = await created.json();
   try {
-    await form.locator("input[name='customer_full_name']").fill(updatedName);
-    await form.locator("input[name='customer_phone']").fill(updatedPhone);
-    await form.locator("input[name='customer_address']").fill(updatedAddress);
-    await page.locator("[data-action='save-order-edit']").click();
-
+    await page.goto(baseUrl, { waitUntil: "networkidle" });
+    await page.locator(".nav-item[data-view='orders']").click();
+    await page.locator('[data-action="edit-orders"][data-id="' + order.id + '"]').click();
+    const form = page.locator("#orderEditForm");
+    await expect(form.locator('input[name="customer_full_name"]')).toHaveValue(source.full_name);
+    await expect(form.locator('input[name="customer_full_name"]')).toHaveAttribute("readonly", "");
+    await expect(form.locator('input[name="update_customer_address"]')).not.toBeChecked();
+    await form.locator('input[name="customer_address"]').fill("Văn phòng QA riêng cho deal");
+    await page.locator('[data-action="save-order-edit"]').click();
     await expect(form).toHaveCount(0);
-    const saved = await (await page.request.get(`${baseUrl}/api/bootstrap`)).json();
-    const savedCustomer = saved.customers.find((customer) => customer.id === originalCustomerId);
-    expect(savedCustomer.full_name).toBe(updatedName);
-    expect(savedCustomer.phone).toBe(updatedPhone);
-    expect(savedCustomer.address).toBe(updatedAddress);
+    const saved = await (await request.get(baseUrl + "/api/bootstrap")).json();
+    expect(saved.customers.find(c => c.id === source.id).address).toBe(source.address);
+    expect(saved.orders.find(o => o.id === order.id).delivery.address).toBe("Văn phòng QA riêng cho deal");
   } finally {
-    await page.request.patch(`${baseUrl}/api/customers/${originalCustomerId}`, {
-      data: {
-        full_name: originalCustomer.full_name,
-        phone: originalCustomer.phone,
-        address: originalCustomer.address,
-        channel: originalCustomer.channel,
-        account: originalCustomer.account,
-        province: originalCustomer.province,
-        district: originalCustomer.district,
-        ward: originalCustomer.ward,
-        note: originalCustomer.note,
-      },
-    });
+    await request.delete(baseUrl + "/api/orders/" + order.id);
   }
 });
 

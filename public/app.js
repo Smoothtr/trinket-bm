@@ -239,17 +239,21 @@ function addressPickerTemplate({
   idPrefix = "",
   value = {},
   initialMode = "",
+  preserveValue = false,
 } = {}) {
-  const mode = initialMode || (value.province && !value.district ? "current" : "legacy");
+  const mode = initialMode || value.address_mode || (value.province && !value.district ? "current" : "legacy");
   const provinces = ADDRESS_DATA[mode] || [];
   const provinceNames = provinces.map((province) => province[0]);
-  const province = addressValue(provinceNames, value.province, defaultAddressProvince(provinces));
+  const province = preserveValue ? String(value.province || "") : addressValue(provinceNames, value.province, defaultAddressProvince(provinces));
+  if (preserveValue && !provinceNames.includes(province)) provinceNames.unshift(province);
   const provinceEntry = provinces.find((entry) => entry[0] === province);
   const districtNames = mode === "legacy" ? (provinceEntry?.[1] || []).map((district) => district[0]) : [];
-  const district = addressValue(districtNames, value.district);
+  const district = mode === "current" ? "" : preserveValue ? String(value.district || "") : addressValue(districtNames, value.district);
+  if (preserveValue && mode === "legacy" && !districtNames.includes(district)) districtNames.unshift(district);
   const districtEntry = mode === "legacy" ? provinceEntry?.[1].find((entry) => entry[0] === district) : null;
-  const wardNames = mode === "current" ? provinceEntry?.[1] || [] : districtEntry?.[1] || [];
-  const ward = addressValue(wardNames, value.ward);
+  const wardNames = [...(mode === "current" ? provinceEntry?.[1] || [] : districtEntry?.[1] || [])];
+  const ward = preserveValue ? String(value.ward || "") : addressValue(wardNames, value.ward);
+  if (preserveValue && !wardNames.includes(ward)) wardNames.unshift(ward);
   const provinceId = `${idPrefix}provinceSelect`;
   const districtId = `${idPrefix}districtSelect`;
   const wardId = `${idPrefix}wardSelect`;
@@ -257,7 +261,7 @@ function addressPickerTemplate({
   const modeId = `${idPrefix}addressTwoLevel`;
 
   return `
-    <section class="address-picker field full" data-address-picker data-address-mode="${mode}">
+    <section class="address-picker field full" data-address-picker data-address-mode="${mode}" ${preserveValue ? 'data-preserve-address="true"' : ""}>
       <div class="address-picker-header">
         <div>
           <h3>Địa chỉ hành chính</h3>
@@ -278,15 +282,15 @@ function addressPickerTemplate({
       <div class="address-level-grid ${mode === "current" ? "is-two-level" : ""}" data-address-levels>
         <div class="field">
           <label for="${provinceId}">Tỉnh/TP</label>
-          <select name="${prefix}province" id="${provinceId}" data-address-province required>${addressOptionTags(provinceNames, province)}</select>
+          <select name="${prefix}province" id="${provinceId}" data-address-province ${preserveValue ? "" : "required"}>${addressOptionTags(provinceNames, province)}</select>
         </div>
         <div class="field" data-address-district-field ${mode === "current" ? "hidden" : ""}>
           <label for="${districtId}">Quận/Huyện</label>
-          <select name="${prefix}district" id="${districtId}" data-address-district ${mode === "current" ? "disabled" : "required"}>${addressOptionTags(districtNames, district)}</select>
+          <select name="${prefix}district" id="${districtId}" data-address-district ${mode === "current" ? "disabled" : preserveValue ? "" : "required"}>${addressOptionTags(districtNames, district)}</select>
         </div>
         <div class="field">
           <label for="${wardId}">Phường/Xã/Đặc khu</label>
-          <select name="${prefix}ward" id="${wardId}" data-address-ward required>${addressOptionTags(wardNames, ward)}</select>
+          <select name="${prefix}ward" id="${wardId}" data-address-ward ${preserveValue ? "" : "required"}>${addressOptionTags(wardNames, ward)}</select>
         </div>
       </div>
       <p class="address-picker-feedback small muted" data-address-feedback aria-live="polite">${addressPickerSummary(mode)}</p>
@@ -563,7 +567,7 @@ async function api(path, options = {}) {
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error || response.statusText);
+    throw Object.assign(new Error(error.error || response.statusText), { code: error.code, status: response.status });
   }
   return response.json();
 }
@@ -2014,7 +2018,7 @@ function renderShipping() {
                     .map(
                       (order) => `
               <div class="metric-row">
-                <span><strong>${esc(order.order_code)}</strong><br><span class="small muted">${esc(order.customer?.full_name)} · ${esc(order.customer?.province || "")}</span></span>
+                <span><strong>${esc(order.order_code)}</strong><br><span class="small muted">${esc(order.customer?.full_name)} · ${esc(order.delivery?.province || "")}</span></span>
                 ${canManageShipments() ? `<button class="primary" data-action="create-shipment" data-order-id="${esc(order.id)}"><i data-lucide="truck"></i><span>Tạo vận đơn</span></button>` : ""}
               </div>
             `,
@@ -2811,31 +2815,36 @@ function orderFormTemplate(order = null) {
   const orderCustomer = isEdit
     ? state.data.customers.find((customer) => customer.id === order.customer_id) || order.customer || {}
     : {};
-  const channelOptions = optionTags(state.data.meta.channels, order?.customer?.channel || "");
   const statusOptions = optionTags(state.data.meta.order_statuses, order?.status || "tu_van");
+  const delivery = order?.delivery || orderCustomer;
+  const locked = Boolean(order?.shipment_id || order?.shipment || state.data.shipments?.some((shipment) => shipment.order_id === orderId));
   return `
-    <form id="${isEdit ? "orderEditForm" : "orderForm"}" class="form-grid order-editor-form">
+    <form id="${isEdit ? "orderEditForm" : "orderForm"}" class="form-grid order-editor-form" data-delivery-locked="${locked}">
       <input type="hidden" name="id" value="${esc(orderId)}">
+      <input type="hidden" name="customer_id" value="${esc(order?.customer_id || "")}">
       <section class="editor-section field full order-customer-section">
-        <div class="editor-section-header"><div><h3 class="section-title"><span class="section-kicker" aria-hidden="true">01 · </span><span>Thông tin khách hàng</span></h3><p class="small muted">Thông tin liên hệ và địa chỉ nhận hàng của khách.</p></div></div>
+        <div class="editor-section-header"><div><h3 class="section-title"><span class="section-kicker" aria-hidden="true">01 · </span><span>Thông tin khách hàng</span></h3><p class="small muted">Nhập SĐT để tìm khách cũ hoặc tạo khách mới.</p></div></div>
         <div class="form-grid editor-section-grid">
-          ${isEdit ? `
-            <div class="field full">
-              <label>Khách hàng đang liên kết</label>
-              <select name="customer_id" data-order-customer-select required>${optionTags(state.data.customers.map((customer) => ({ id: customer.id, label: `${customer.full_name} · ${customer.phone}` })), order.customer_id)}</select>
-              <p class="small muted">Có thể đổi khách hoặc cập nhật trực tiếp thông tin của khách đang chọn.</p>
-            </div>
-            <div class="form-grid order-customer-edit-fields field full" data-order-customer-fields>
-              ${orderEditableCustomerFields(orderCustomer)}
-            </div>
-          ` : `
-            <div class="field"><label>Tên khách</label><input name="customer_full_name" required placeholder="Nguyễn Minh Anh"></div>
-            <div class="field"><label>Số điện thoại</label><input name="customer_phone" required placeholder="090..."></div>
-            <div class="field"><label>Kênh</label><select name="customer_channel">${channelOptions}</select></div>
-            <div class="field"><label>Account</label><input name="customer_account" placeholder="@instagram"></div>
-            <div class="field full"><label>Địa chỉ giao hàng</label><input name="customer_address" placeholder="Số nhà, tên đường, thôn/xóm..."></div>
-            ${addressPickerTemplate({ initialMode: "legacy" })}
-          `}
+          <div class="field full customer-lookup">
+            <label for="orderCustomerPhone">Số điện thoại khách</label>
+            <input id="orderCustomerPhone" name="customer_phone" type="tel" inputmode="tel" required autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="orderCustomerSuggestions" value="${esc(orderCustomer.phone || "")}" ${isEdit ? "readonly" : ""} placeholder="Nhập SĐT để tìm khách cũ…">
+            <div id="orderCustomerSuggestions" class="customer-suggestions" role="listbox" aria-label="Khách hàng gợi ý" hidden></div>
+            <p class="small muted customer-lookup-status" data-customer-lookup-status role="status"></p>
+          </div>
+          <div class="field full selected-customer" data-selected-customer ${isEdit ? "" : "hidden"}>
+            <span class="tag">Khách đã có</span><strong data-selected-customer-name>${esc(orderCustomer.full_name || "")}</strong>
+            <button type="button" class="button" data-change-customer ${locked ? "disabled" : ""}>Đổi khách</button>
+            <span class="small muted">Tên, SĐT, kênh và account thuộc hồ sơ khách. Chỉnh các thông tin này tại mục Khách hàng.</span>
+          </div>
+          <div class="field"><label for="orderCustomerName">Tên khách</label><input id="orderCustomerName" name="customer_full_name" required value="${esc(orderCustomer.full_name || "")}" ${isEdit ? "readonly" : ""} placeholder="Nguyễn Minh Anh"></div>
+          <div class="field"><label for="orderCustomerChannel">Kênh</label><select id="orderCustomerChannel" name="customer_channel" ${isEdit ? "disabled" : ""}>${optionTags(state.data.meta.channels, orderCustomer.channel || "")}</select></div>
+          <div class="field full"><label for="orderCustomerAccount">Account</label><input id="orderCustomerAccount" name="customer_account" value="${esc(orderCustomer.account || "")}" ${isEdit ? "readonly" : ""} placeholder="@instagram"></div>
+          <div class="field full" data-order-delivery-fields>${orderDeliveryFields(delivery, { preserveValue: isEdit, locked })}</div>
+          <label class="check-control field full update-customer-address" data-update-address-label ${isEdit && !locked ? "" : "hidden"}>
+            <input type="checkbox" name="update_customer_address" ${locked ? "disabled" : ""}>
+            <span>Cập nhật địa chỉ này vào hồ sơ khách</span>
+          </label>
+          <p class="small muted field full" data-delivery-scope role="status">${locked ? "Deal đã có vận đơn. Cần xử lý vận đơn trước khi đổi khách hoặc địa chỉ giao hàng." : "Địa chỉ này chỉ dùng cho deal đang tạo/sửa. Hồ sơ khách và các deal khác được giữ nguyên."}</p>
         </div>
       </section>
       <section class="editor-section field full order-schedule-section">
@@ -2865,30 +2874,162 @@ function orderFormTemplate(order = null) {
   `;
 }
 
-function orderEditableCustomerFields(customer = {}) {
-  return `
-    <div class="field"><label>Tên khách</label><input name="customer_full_name" value="${esc(customer.full_name || "")}" required placeholder="Nguyễn Minh Anh"></div>
-    <div class="field"><label>Số điện thoại</label><input name="customer_phone" value="${esc(customer.phone || "")}" required placeholder="090..."></div>
-    <div class="field"><label>Kênh</label><select name="customer_channel">${optionTags(state.data.meta.channels, customer.channel || "")}</select></div>
-    <div class="field"><label>Account</label><input name="customer_account" value="${esc(customer.account || "")}" placeholder="@instagram"></div>
-    <div class="field full"><label>Địa chỉ giao hàng</label><input name="customer_address" value="${esc(customer.address || "")}" placeholder="Số nhà, tên đường, thôn/xóm..."></div>
-    ${addressPickerTemplate({ idPrefix: "orderEditCustomer", value: customer })}
-  `;
+function orderDeliveryFields(delivery = {}, { preserveValue = false, locked = false } = {}) {
+  return `<fieldset class="order-delivery-fields form-grid" ${locked ? "disabled" : ""}>
+    <legend>Địa chỉ giao hàng của deal</legend>
+    <div class="field full"><label for="orderDeliveryAddress">Địa chỉ giao hàng</label><input id="orderDeliveryAddress" name="customer_address" value="${esc(delivery.address || "")}" placeholder="Số nhà, tên đường, thôn/xóm…"></div>
+    ${addressPickerTemplate({ value: delivery, preserveValue })}
+  </fieldset>`;
 }
 
-function bindOrderEditCustomerFields(form) {
-  const select = form?.querySelector("[data-order-customer-select]");
-  const fields = form?.querySelector("[data-order-customer-fields]");
-  if (!select || !fields) return;
+function customerAddressSnapshot(customer = {}) {
+  return Object.fromEntries(["address", "province", "district", "ward", "address_mode"].map((key) => [key,
+    key === "address_mode" ? customer.address_mode || (customer.province && !customer.district ? "current" : "legacy") : String(customer[key] || ""),
+  ]));
+}
 
-  const bindCurrentAddress = () => bindAddressPicker(fields.querySelector("[data-address-picker]"));
-  select.addEventListener("change", () => {
-    const customer = state.data.customers.find((item) => item.id === select.value);
-    fields.innerHTML = orderEditableCustomerFields(customer || {});
-    bindCurrentAddress();
-    refreshIcons();
+function collectOrderDelivery(form) {
+  const fields = form.elements;
+  const contact = form._deliveryContact;
+  const mode = form.querySelector("[data-address-picker]").dataset.addressMode;
+  return {
+    full_name: contact?.full_name || fields.customer_full_name.value.trim(),
+    phone: contact?.phone || fields.customer_phone.value.trim(),
+    address: fields.customer_address.value.trim(),
+    province: fields.customer_province.value,
+    district: mode === "current" ? "" : fields.customer_district.value,
+    ward: fields.customer_ward.value,
+    address_mode: mode,
+  };
+}
+
+function bindOrderCustomerFields(form, order = null) {
+  const phone = form.elements.customer_phone;
+  const customerId = form.elements.customer_id;
+  const suggestions = form.querySelector("#orderCustomerSuggestions");
+  const lookupStatus = form.querySelector("[data-customer-lookup-status]");
+  const card = form.querySelector("[data-selected-customer]");
+  const deliveryHost = form.querySelector("[data-order-delivery-fields]");
+  const updateLabel = form.querySelector("[data-update-address-label]");
+  const update = form.elements.update_customer_address;
+  const selected = state.data.customers.find((item) => item.id === customerId.value);
+  const locked = form.dataset.deliveryLocked === "true";
+  form._customerBaseline = selected ? customerAddressSnapshot(selected) : null;
+  form._deliveryContact = order?.delivery || selected || null;
+  let matches = [];
+  let active = -1;
+  const hide = () => {
+    suggestions.hidden = true;
+    phone.setAttribute("aria-expanded", "false");
+    phone.removeAttribute("aria-activedescendant");
+    active = -1;
+  };
+  const refresh = () => {
+    hide();
+    if (customerId.value || locked) return;
+    matches = window.TrinketCustomers.findCustomers(state.data.customers, phone.value);
+    const enough = phone.value.replace(/\D/g, "").length >= 3;
+    lookupStatus.textContent = !enough ? "Nhập ít nhất 3 chữ số để tìm khách cũ." : matches.length
+      ? "Chọn đúng khách trong gợi ý. Nếu chưa thấy, nhập thêm số để thu hẹp kết quả."
+      : "Chưa tìm thấy khách trùng số. Điền thông tin bên dưới để tạo khách mới.";
+    suggestions.innerHTML = matches.map((customer, index) => `<button type="button" role="option" aria-selected="false" id="customerSuggestion${index}" data-customer-index="${index}"><strong>${esc(customer.full_name)} · ${esc(customer.phone)}</strong><span>${esc([customer.address, customer.ward, customer.province].filter(Boolean).join(", ") || "Chưa có địa chỉ")}</span></button>`).join("");
+    suggestions.hidden = !matches.length;
+    phone.setAttribute("aria-expanded", String(Boolean(matches.length)));
+  };
+  const updateScope = () => {
+    if (!locked) form.querySelector("[data-delivery-scope]").textContent = update.checked
+      ? "Khi lưu, địa chỉ này cũng trở thành địa chỉ mặc định của khách. Địa chỉ các deal trước được giữ nguyên."
+      : "Địa chỉ này chỉ dùng cho deal đang tạo/sửa. Hồ sơ khách và các deal khác được giữ nguyên.";
+  };
+  const selectCustomer = (customer) => {
+    if (form.dataset.deliveryDirty === "true" && !window.confirm("Bạn đã sửa địa chỉ giao hàng. Thay bằng địa chỉ mặc định của khách vừa chọn?")) return;
+    customerId.value = customer.id;
+    phone.value = customer.phone || "";
+    phone.readOnly = true;
+    form.elements.customer_full_name.value = customer.full_name || "";
+    form.elements.customer_full_name.readOnly = true;
+    form.elements.customer_channel.value = customer.channel || "Khác";
+    form.elements.customer_channel.disabled = true;
+    form.elements.customer_account.value = customer.account || "";
+    form.elements.customer_account.readOnly = true;
+    card.hidden = false;
+    card.querySelector("[data-selected-customer-name]").textContent = customer.full_name;
+    lookupStatus.textContent = "Deal sẽ liên kết với hồ sơ khách đã chọn, không tạo khách mới.";
+    form._customerBaseline = customerAddressSnapshot(customer);
+    form._deliveryContact = { full_name: customer.full_name, phone: customer.phone };
+    deliveryHost.innerHTML = orderDeliveryFields(customer, { preserveValue: true });
+    bindAddressPicker(deliveryHost.querySelector("[data-address-picker]"));
+    form.dataset.deliveryDirty = "false";
+    updateLabel.hidden = false;
+    update.checked = false;
+    updateScope();
+    hide();
+  };
+  phone.addEventListener("input", refresh);
+  phone.addEventListener("focus", refresh);
+  phone.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") { hide(); return; }
+    if (!["ArrowDown", "ArrowUp", "Enter"].includes(event.key) || suggestions.hidden) return;
+    event.preventDefault();
+    if (event.key === "Enter") { if (active >= 0) selectCustomer(matches[active]); return; }
+    active = event.key === "ArrowDown" ? (active + 1) % matches.length : (active <= 0 ? matches.length : active) - 1;
+    suggestions.querySelectorAll("[role=option]").forEach((option, index) => option.setAttribute("aria-selected", String(index === active)));
+    phone.setAttribute("aria-activedescendant", `customerSuggestion${active}`);
+    suggestions.children[active].scrollIntoView({ block: "nearest" });
   });
-  bindCurrentAddress();
+  suggestions.addEventListener("click", (event) => {
+    const option = event.target.closest("[data-customer-index]");
+    if (option) selectCustomer(matches[Number(option.dataset.customerIndex)]);
+  });
+  phone.closest(".customer-lookup").addEventListener("focusout", (event) => {
+    if (!phone.closest(".customer-lookup").contains(event.relatedTarget)) hide();
+  });
+  form.querySelector("[data-change-customer]").addEventListener("click", () => {
+    if (locked) return;
+    customerId.value = "";
+    form._customerBaseline = null;
+    form._deliveryContact = null;
+    phone.readOnly = false;
+    phone.value = "";
+    for (const key of ["customer_full_name", "customer_account"]) {
+      form.elements[key].readOnly = false;
+      form.elements[key].value = "";
+    }
+    form.elements.customer_channel.disabled = false;
+    card.hidden = true;
+    updateLabel.hidden = true;
+    update.checked = false;
+    updateScope();
+    phone.focus();
+    refresh();
+  });
+  deliveryHost.addEventListener("input", () => { form.dataset.deliveryDirty = "true"; });
+  deliveryHost.addEventListener("change", () => { form.dataset.deliveryDirty = "true"; });
+  update.addEventListener("change", updateScope);
+  form._refreshCustomerSuggestions = refresh;
+  bindAddressPicker(deliveryHost.querySelector("[data-address-picker]"));
+  if (!selected) refresh();
+}
+
+function validateOrderCustomerSelection(form, { editing = false } = {}) {
+  if (form.elements.customer_id.value) return true;
+  const phone = window.TrinketCustomers.normalizePhone(form.elements.customer_phone.value);
+  if (editing || state.data.customers.some((customer) => window.TrinketCustomers.normalizePhone(customer.phone) === phone)) {
+    form._refreshCustomerSuggestions();
+    form.elements.customer_phone.focus();
+    toast("Hãy chọn khách cũ trong danh sách gợi ý trước khi lưu.");
+    return false;
+  }
+  return true;
+}
+
+async function refreshCustomersAfterConflict(form, error) {
+  if (!["customer-selection-required", "customer-missing", "customer-address-conflict"].includes(error.code)) return;
+  try {
+    const fresh = await api("/api/bootstrap");
+    state.data.customers = fresh.customers;
+    form._refreshCustomerSuggestions();
+  } catch { /* Preserve the form and original actionable error if refresh is unavailable. */ }
 }
 
 function collectOrderItems(form, imageOverrides = new Map()) {
@@ -3605,7 +3746,7 @@ function bindAddressPicker(root) {
   provinceSelect.addEventListener("change", refresh);
   districtSelect.addEventListener("change", refresh);
   modeToggle.addEventListener("change", refresh);
-  refresh();
+  if (root.dataset.preserveAddress !== "true") refresh();
 }
 
 function openOrderForm() {
@@ -3628,7 +3769,7 @@ function openOrderForm() {
       </section>
     </div>
   `;
-  bindAddressPicker(document.querySelector("#orderForm [data-address-picker]"));
+  bindOrderCustomerFields(document.querySelector("#orderForm"));
   document.querySelectorAll("#orderForm .product-item-row").forEach((row) => syncProductModeRow(row, row.querySelector('[data-field="product_mode"]')?.value, { hydrateCatalog: false }));
   bindOrderFormEnhancements(document.querySelector("#orderForm"));
   refreshOrderPricing(document.querySelector("#orderForm"));
@@ -3719,6 +3860,7 @@ function customerAddressFields(customer) {
     prefix: "",
     idPrefix: "customer",
     value: customer,
+    preserveValue: true,
   });
 }
 
@@ -3762,6 +3904,9 @@ async function saveCustomerEditFromForm() {
   if (!form || !formIsValid(form)) return;
   const data = new FormData(form);
   const customerId = data.get("id");
+  const addressMode = form.querySelector("[data-address-picker]").dataset.addressMode;
+  data.set("address_mode", addressMode);
+  if (addressMode === "current") data.set("district", "");
   await api(`/api/customers/${customerId}`, {
     method: "PATCH",
     body: Object.fromEntries(data.entries()),
@@ -3791,8 +3936,10 @@ async function saveOrderFromForm() {
   const form = document.querySelector("#orderForm");
   if (!formIsValid(form)) return;
   if (form.dataset.uploading === "true") return;
+  if (!validateOrderCustomerSelection(form)) return;
   if (!window.confirm("Tạo deal mới với thông tin hiện tại?")) return;
   const data = new FormData(form);
+  const delivery = collectOrderDelivery(form);
   let uploadResult = { overrides: new Map(), uploaded: [] };
   let orderPersisted = false;
   setOrderUploadState(form, true);
@@ -3803,6 +3950,10 @@ async function saveOrderFromForm() {
       method: "POST",
       body: {
         id: data.get("id"),
+        customer_id: data.get("customer_id") || undefined,
+        delivery,
+        update_customer_address: data.get("update_customer_address") === "on",
+        expected_customer_address: form._customerBaseline,
         customer: {
           full_name: data.get("customer_full_name"),
           phone: data.get("customer_phone"),
@@ -3812,6 +3963,7 @@ async function saveOrderFromForm() {
           province: data.get("customer_province"),
           district: data.get("customer_district"),
           ward: data.get("customer_ward"),
+          address_mode: delivery.address_mode,
         },
         status: data.get("status"),
         items,
@@ -3857,6 +4009,7 @@ async function saveOrderFromForm() {
     render();
   } catch (error) {
     if (!orderPersisted) await deleteStoredImages(uploadResult.uploaded, { quiet: true });
+    await refreshCustomersAfterConflict(form, error);
     throw error;
   } finally {
     if (form.isConnected) setOrderUploadState(form, false);
@@ -3885,7 +4038,7 @@ function openOrderEditor(orderId) {
       </section>
     </div>
   `;
-  bindOrderEditCustomerFields(document.querySelector("#orderEditForm"));
+  bindOrderCustomerFields(document.querySelector("#orderEditForm"), order);
   document.querySelectorAll("#orderEditForm .product-item-row").forEach((row) => syncProductModeRow(row, row.querySelector('[data-field="product_mode"]')?.value, { hydrateCatalog: false }));
   bindOrderFormEnhancements(document.querySelector("#orderEditForm"));
   refreshOrderPricing(document.querySelector("#orderEditForm"));
@@ -3896,37 +4049,23 @@ async function saveOrderEditFromForm() {
   const form = document.querySelector("#orderEditForm");
   if (!form || !formIsValid(form)) return;
   if (form.dataset.uploading === "true") return;
+  if (!validateOrderCustomerSelection(form, { editing: true })) return;
   const data = new FormData(form);
   const orderId = data.get("id");
   const customerId = String(data.get("customer_id") || "");
-  const customer = state.data.customers.find((item) => item.id === customerId);
-  const customerPatch = {
-    full_name: String(data.get("customer_full_name") || "").trim(),
-    phone: String(data.get("customer_phone") || "").trim(),
-    channel: String(data.get("customer_channel") || ""),
-    account: String(data.get("customer_account") || "").trim(),
-    address: String(data.get("customer_address") || "").trim(),
-    province: String(data.get("customer_province") || ""),
-    district: String(data.get("customer_district") || ""),
-    ward: String(data.get("customer_ward") || ""),
-  };
-  const customerChanged = customer && Object.entries(customerPatch)
-    .some(([field, value]) => String(customer[field] || "") !== value);
+  const delivery = collectOrderDelivery(form);
   let uploadResult = { overrides: new Map(), uploaded: [] };
   let orderPersisted = false;
   setOrderUploadState(form, true);
   try {
     uploadResult = await uploadPendingOrderImages(form);
-    if (customerChanged) {
-      await api(`/api/customers/${customerId}`, {
-        method: "PATCH",
-        body: customerPatch,
-      });
-    }
     await api(`/api/orders/${orderId}`, {
       method: "PATCH",
       body: {
         customer_id: customerId,
+        delivery,
+        update_customer_address: data.get("update_customer_address") === "on",
+        expected_customer_address: form._customerBaseline,
         status: data.get("status"),
         items: collectOrderItems(form, uploadResult.overrides),
         quote: collectOrderQuote(form),
@@ -3954,6 +4093,7 @@ async function saveOrderEditFromForm() {
     render();
   } catch (error) {
     if (!orderPersisted) await deleteStoredImages(uploadResult.uploaded, { quiet: true });
+    await refreshCustomersAfterConflict(form, error);
     throw error;
   } finally {
     if (form.isConnected) setOrderUploadState(form, false);
@@ -4050,6 +4190,10 @@ function openOrderDetail(orderId) {
                   ${canEditOrders() ? `<button class="ghost" data-action="edit-orders" data-id="${esc(order.id)}"><i data-lucide="pen-line"></i><span>Sửa sản phẩm</span></button>` : ""}
                 </div>
                 <div class="table-wrap"><table><thead><tr><th>Ảnh</th><th>Mã mẫu</th><th>Sản phẩm / ghi chú</th><th>Thông số</th><th>SL</th>${canSeeCosts() ? '<th class="money">Giá vốn</th>' : ""}<th class="money">Thành tiền</th></tr></thead><tbody>${productRows}</tbody></table></div>
+              </section>
+              <section class="panel order-delivery-detail">
+                <div class="panel-header"><h3>Giao hàng cho deal này</h3></div>
+                <div class="panel-body"><strong>${esc(order.delivery?.full_name || order.customer?.full_name || "")}</strong><p>${esc(order.delivery?.phone || order.customer?.phone || "")}</p><p>${esc([order.delivery?.address, order.delivery?.ward, order.delivery?.district, order.delivery?.province].filter(Boolean).join(", ") || "Chưa có địa chỉ")}</p><span class="small muted">Địa chỉ lưu riêng cho deal, có thể khác địa chỉ mặc định trong hồ sơ khách.</span></div>
               </section>
               <section class="panel customer-quote-detail">
                 <div class="panel-header"><h3>Báo giá khách</h3>${canEditOrders() ? `<button class="ghost" data-action="edit-orders" data-id="${esc(order.id)}"><i data-lucide="pen-line"></i><span>Sửa báo giá</span></button>` : ""}</div>
@@ -5093,7 +5237,7 @@ async function saveBulkEditFromForm() {
   }
   if (!Object.keys(body).length) return toast("Chưa có trường nào để cập nhật");
   const basePath = entityBasePath(entity);
-  await Promise.all(ids.map((id) => api(`${basePath}/${id}`, { method: "PATCH", body })));
+  for (const id of ids) await api(`${basePath}/${id}`, { method: "PATCH", body });
   clearSelection(entity);
   closeModal();
   await loadData();
@@ -5108,7 +5252,7 @@ async function bulkDelete(entity) {
   const extra = entity === "customers" ? " Khách bị xóa sẽ xóa kèm toàn bộ deal/payment/vận đơn liên quan." : entity === "orders" ? " Deal bị xóa sẽ xóa kèm payment/source line/vận đơn liên quan." : "";
   if (!window.confirm(`Xóa ${fmtNumber(ids.length)} ${entityLabel(entity)} đã chọn?${extra}`)) return;
   const basePath = entityBasePath(entity);
-  await Promise.all(ids.map((id) => api(`${basePath}/${id}`, { method: "DELETE" })));
+  for (const id of ids) await api(`${basePath}/${id}`, { method: "DELETE" });
   clearSelection(entity);
   closeModal();
   await loadData();
